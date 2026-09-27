@@ -129,6 +129,17 @@ def healthz():
     return {"ok": True}
 
 
+@app.get("/healthz/db", include_in_schema=False)
+def healthz_db():
+    """Unauthenticated liveness of the DB connection; reveals only up/down."""
+    try:
+        with _sessions()() as s:
+            s.scalar(select(func.count()).select_from(Run))
+        return {"db": "ok"}
+    except Exception:
+        raise HTTPException(503, "database unavailable") from None
+
+
 @app.get("/", dependencies=[Depends(auth)])
 def overview():
     st = _settings()
