@@ -168,3 +168,15 @@ def test_dry_run_post_can_be_approved_and_is_sent_once(settings, sessions):
     asyncio.run(drain(sessions, pub, settings, sleep=no_sleep))
     asyncio.run(drain(sessions, pub, settings, sleep=no_sleep))
     assert len(pub.sent) == 1 and _statuses(sessions) == ["sent"]
+
+
+def test_overloaded_override_model_does_not_stop_gateway(settings, sessions):
+    from ainews.llm.gateway import ModelOverloaded
+
+    s2 = settings.model_copy(update={"llm_max_retries": 1})
+    p = Scripted([Transient("503"), Transient("503"), OK])
+    gw = AIGateway(p, sessions, s2, sleep=no_sleep)
+    with pytest.raises(ModelOverloaded):
+        asyncio.run(gw.generate("dedup", "sys", "{}", DedupResponse, model="big-model"))
+    assert gw.stopped_reason is None
+    assert gen(gw).verdicts  # default model still usable in the same run

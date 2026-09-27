@@ -12,7 +12,7 @@ from .collectors import fetch_article_text
 from .config import Settings
 from .db import kv_get
 from .editorial_schemas import DedupResponse, PostDraft, TriageResponse
-from .llm.gateway import AIGateway, AIUnavailable, InvalidOutput
+from .llm.gateway import AIGateway, AIUnavailable, InvalidOutput, ModelOverloaded
 from .llm.gemini import dumps
 from .models import Article, Publication, Source, Story, utcnow
 from .prompts import COMPOSE_SYSTEM, DEDUP_SYSTEM, PROMPT_VERSION, TRIAGE_SYSTEM
@@ -218,7 +218,12 @@ async def _compose(s, settings, gateway, client, st: Story) -> PostDraft:
         "materials": docs,
     }
     model = settings.gemini_compose_model or None
-    draft = await gateway.generate("compose", COMPOSE_SYSTEM, dumps(task), PostDraft, temperature=0.4, model=model)
+    try:
+        draft = await gateway.generate("compose", COMPOSE_SYSTEM, dumps(task), PostDraft, temperature=0.4, model=model)
+    except ModelOverloaded:
+        # Free fallback to the default (free-tier) model; never to a paid one.
+        model = None
+        draft = await gateway.generate("compose", COMPOSE_SYSTEM, dumps(task), PostDraft, temperature=0.4)
     if major and not (draft.impact_users and draft.impact_developers and draft.impact_business):
         task["note"] = "Это крупная история: обязательно заполни impact_users, impact_developers, impact_business."
         try:

@@ -180,9 +180,12 @@ def main(argv: list[str] | None = None) -> int:
 
             from .models import Run, utcnow
 
-            last = s.scalar(select(Run.started_at).where(Run.kind == "cycle", Run.status.in_(("ok", "partial")))
-                            .order_by(Run.started_at.desc()).limit(1))
+            last_run = s.scalar(select(Run).where(Run.kind == "cycle", Run.status.in_(("ok", "partial")))
+                                .order_by(Run.started_at.desc()).limit(1))
+            last = last_run.started_at if last_run else None
             due = last is None or last <= utcnow() - timedelta(hours=args.min_hours)
+            if not due and last_run and (last_run.stats or {}).get("ai_deferred") and "quota" not in                     last_run.stats["ai_deferred"] and last <= utcnow() - timedelta(minutes=50):
+                due = True  # AI stage was deferred by a transient outage: catch up after ~1 hour
             print(f"last successful cycle: {last.isoformat() if last else 'never'}; due: {due}")
             return 0 if due else 1
         elif args.cmd == "status":

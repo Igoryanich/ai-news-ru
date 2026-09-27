@@ -38,6 +38,11 @@ class AIUnavailable(Exception):
     """AI work must stop for now (quota, limit, or repeated failures). Stories are deferred."""
 
 
+class ModelOverloaded(AIUnavailable):
+    """A per-call model override stayed unavailable (5xx/timeouts). The default model may still
+    work, so the gateway is NOT stopped."""
+
+
 class InvalidOutput(Exception):
     pass
 
@@ -140,7 +145,7 @@ class AIGateway:
         self._last_call = time.monotonic()
 
     # ---- core call loop ---------------------------------------------------------------
-    async def _call(self, kind: str, purpose: str, fn):
+    async def _call(self, kind: str, purpose: str, fn, override: bool = False):
         attempt = 0
         while True:
             self._check_available(kind)
@@ -155,6 +160,8 @@ class AIGateway:
             except ProviderError as exc:
                 self._record(kind, purpose, exc.status, int((time.monotonic() - started) * 1000), None, exc)
                 if not exc.retryable or attempt >= self.s.llm_max_retries:
+                    if exc.retryable and override:
+                        raise ModelOverloaded(f"override model unavailable: {exc}") from None
                     if exc.retryable:
                         # Keep trying next cycle rather than burning the whole run on a flaky API.
                         self.stopped_reason = f"provider unavailable after {attempt + 1} attempts: {exc}"
@@ -188,7 +195,7 @@ class AIGateway:
                     **({"model": model} if model else {}),
                 )
 
-            result, latency = await self._call("generate", purpose, call)
+            result, latency = await self._call("generate", purpose, call, override=bool(model))
             try:
                 parsed = schema_model.model_validate(json.loads(result.text))
             except (ValueError, ValidationError) as exc:
