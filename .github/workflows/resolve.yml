@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       publication_id:
-        description: "Publication id (see dashboard → Публикации)"
+        description: "Publication id (see dashboard → Публикации). retry on a dry_run post = approve it for sending"
         required: true
       action:
         description: "Decision"

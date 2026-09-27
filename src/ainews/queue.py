@@ -127,14 +127,16 @@ def resolve(s: Session, pub_id: int, action: str, message_id: int | None = None)
     p = s.get(Publication, pub_id)
     if p is None:
         raise ValueError("publication not found")
-    if p.status not in ("uncertain", "failed", "pending"):
-        raise ValueError(f"publication is {p.status}; only uncertain/failed/pending can be resolved")
+    allowed = ("uncertain", "failed", "pending") + (("dry_run",) if action == "retry" else ())
+    if p.status not in allowed:
+        raise ValueError(f"publication is {p.status}; cannot apply '{action}'")
     if action == "sent":
         p.status, p.sent_at, p.message_id, p.error = "sent", utcnow(), message_id, "resolved manually: sent"
         if p.story_id and (st := s.get(Story, p.story_id)):
             st.status, st.published_at = "published", p.sent_at
-    elif action == "retry":
-        p.status, p.next_attempt_at, p.error = "pending", None, "resolved manually: retry"
+    elif action == "retry":  # also: operator approves a dry-run post for real sending
+        note = "approved from dry-run" if p.status == "dry_run" else "resolved manually: retry"
+        p.status, p.next_attempt_at, p.error = "pending", None, note
     elif action == "cancel":
         p.status, p.error = "cancelled", "resolved manually: cancelled"
     else:

@@ -157,3 +157,14 @@ def test_queues_are_isolated_per_target(settings, sessions):
     with sessions() as s:
         other = s.scalar(select(Publication).where(Publication.target == "telegram:other"))
         assert other.status == "pending"
+
+
+def test_dry_run_post_can_be_approved_and_is_sent_once(settings, sessions):
+    with sessions() as s:
+        s.add(Publication(target="telegram:test", dedupe_key="story:9", text="t", status="dry_run"))
+        s.commit()
+        resolve(s, s.scalar(select(Publication.id)), "retry")
+    pub = FakePublisher()
+    asyncio.run(drain(sessions, pub, settings, sleep=no_sleep))
+    asyncio.run(drain(sessions, pub, settings, sleep=no_sleep))
+    assert len(pub.sent) == 1 and _statuses(sessions) == ["sent"]
