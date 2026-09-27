@@ -10,7 +10,7 @@ on:
         description: "What to check"
         required: true
         type: choice
-        options: [telegram-check, ai-check, sources-check]
+        options: [telegram-check, ai-check, sources-check, show-posts]
 
 permissions:
   contents: read
@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -35,3 +36,9 @@ jobs:
           cache-dependency-path: requirements.txt
       - run: pip install -r requirements.txt && pip install --no-deps .
       - run: python -m ainews ${{ inputs.check }}
+      - uses: actions/upload-artifact@v4
+        if: inputs.check == 'show-posts'
+        with:
+          name: posts-${{ github.run_id }}
+          path: out/posts.md
+          retention-days: 14

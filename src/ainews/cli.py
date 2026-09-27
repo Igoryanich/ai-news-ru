@@ -57,6 +57,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("status", help="print recent runs and queue state")
     sub.add_parser("ai-check", help="live check: model, structured JSON, embeddings, dedup calibration")
     sub.add_parser("telegram-check", help="live check: bot, channel, posting rights")
+    sp = sub.add_parser("show-posts", help="write recent publications (with scores) to a Markdown file")
+    sp.add_argument("--limit", type=int, default=30)
+    sp.add_argument("--out", default="out/posts.md")
     args = ap.parse_args(argv)
 
     settings = Settings()
@@ -129,6 +132,22 @@ def main(argv: list[str] | None = None) -> int:
             report = check_privileges(s)
             print(json.dumps(report, indent=2))
             return 0 if report["ok"] else 2
+        elif args.cmd == "show-posts":
+            from sqlalchemy import select
+
+            from .models import Publication, Story
+
+            lines = []
+            for p in s.scalars(select(Publication).order_by(Publication.id.desc()).limit(args.limit)):
+                st = s.get(Story, p.story_id) if p.story_id else None
+                comp = (st.score_components or {}).get("points", {}) if st else {}
+                lines += [f"## #{p.id} · {p.status} · {p.kind}",
+                          f"Importance {st.importance if st else '-'}; компоненты: {comp}; "
+                          f"материалов {st.article_count if st else '-'}, доменов {st.domain_count if st else '-'}",
+                          "", "```html", p.text, "```", ""]
+            Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.out).write_text("\n".join(lines), encoding="utf-8")
+            print(f"wrote {args.out}")
         elif args.cmd == "status":
             from sqlalchemy import func, select
 

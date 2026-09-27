@@ -66,3 +66,13 @@ jobs:
           python -m ainews check-privileges
       - name: Run cycle
         run: python -m ainews cycle --trigger "${{ github.event_name }}"
+      - name: Export recent posts for review
+        if: always()
+        run: python -m ainews show-posts --out out/posts.md || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: posts-${{ github.run_id }}
+          path: out/posts.md
+          retention-days: 14
+          if-no-files-found: ignore
