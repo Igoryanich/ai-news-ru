@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+data/
+out/
+*.db
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+.vercel/

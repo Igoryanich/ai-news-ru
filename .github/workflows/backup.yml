@@ -1,0 +1,40 @@
+name: backup
+
+# Weekly logical backup (gzip JSONL per table) + AI Weekly export, kept as workflow artifacts.
+# Supabase Free has no downloadable backups, so this is the recovery path. See docs/OPERATIONS.md.
+
+on:
+  schedule:
+    - cron: "41 3 * * 1"   # Mondays ~03:41 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: news-cycle
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: pip install -r requirements.txt && pip install --no-deps .
+      - run: python -m ainews backup out/backup
+      - run: |
+          python -m ainews export-weekly --format md --out out/ai-weekly/ai-weekly.md
+          python -m ainews export-weekly --format json --out out/ai-weekly/ai-weekly.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backup-${{ github.run_id }}
+          path: out/
+          retention-days: 90

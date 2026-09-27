@@ -1,0 +1,68 @@
+name: news-cycle
+
+# The production scheduler. Every 4 hours: collect → dedup → rank → draft → publish.
+# Runs entirely in GitHub's cloud against Supabase; no local machine involved.
+# Note: GitHub may delay scheduled runs under load (especially at the top of the hour),
+# so the cron uses minute 17 and exact timing is not guaranteed.
+
+on:
+  schedule:
+    - cron: "17 */4 * * *"
+  workflow_dispatch:
+    inputs:
+      note:
+        description: "Why this manual run (shown in the run list)"
+        required: false
+        default: "manual"
+
+concurrency:
+  group: news-cycle        # never two cycles at once (the DB advisory lock is the second guard)
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      DASHBOARD_DB_PASSWORD: ${{ secrets.DASHBOARD_DB_PASSWORD }}
+      # Non-secret settings: repository *variables* (Settings → Secrets and variables → Variables).
+      DRY_RUN: ${{ vars.DRY_RUN || 'true' }}
+      CHANNEL_NAME: ${{ vars.CHANNEL_NAME || 'AI-новости (рабочее название)' }}
+      TELEGRAM_TARGET: ${{ vars.TELEGRAM_TARGET || 'telegram:main' }}
+      GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.5-flash-lite' }}
+      GEMINI_EMBED_MODEL: ${{ vars.GEMINI_EMBED_MODEL || 'gemini-embedding-001' }}
+      LLM_DAILY_REQUEST_LIMIT: ${{ vars.LLM_DAILY_REQUEST_LIMIT || '150' }}
+      PUBLISH_THRESHOLD: ${{ vars.PUBLISH_THRESHOLD || '55' }}
+      MAIN_THRESHOLD: ${{ vars.MAIN_THRESHOLD || '80' }}
+      HTTP_USER_AGENT: "AINewsRuBot/0.1 (RSS reader; +https://github.com/${{ github.repository }})"
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install
+        run: pip install -r requirements.txt && pip install --no-deps .
+      - name: Check configuration
+        run: |
+          test -n "$DATABASE_URL" || { echo "::error::secret DATABASE_URL is not set"; exit 1; }
+          case "$DATABASE_URL" in *:6543/*) echo "::error::use the Supabase SESSION pooler (port 5432), not the transaction pooler (6543)"; exit 1;; esac
+          test -n "$GEMINI_API_KEY" || echo "::warning::GEMINI_API_KEY not set — AI stages will be skipped"
+          if [ "$DRY_RUN" != "true" ]; then test -n "$TELEGRAM_BOT_TOKEN" -a -n "$TELEGRAM_CHAT_ID" || { echo "::error::Telegram secrets missing while DRY_RUN=false"; exit 1; }; fi
+      - name: Migrate database
+        run: alembic upgrade head
+      - name: Database privileges
+        run: |
+          python -m ainews grant-dashboard
+          python -m ainews check-privileges
+      - name: Run cycle
+        run: python -m ainews cycle --trigger "${{ github.event_name }}"

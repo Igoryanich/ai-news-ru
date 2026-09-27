@@ -1,0 +1,112 @@
+# Source registry. Synced into the `sources` table at the start of every cycle
+# (upsert by `key`; sources removed from this file are disabled, their history kept).
+# Adding/removing a source = editing this file. No pipeline code changes needed.
+#
+# kind:      rss | youtube | github | reddit | arxiv | hn | hf_papers | web | trends
+# authority: editorial prior 0..1 (how much a report from here is worth by default).
+#            It is NOT proof that a claim is true.
+# ai_only:   false → items must pass a cheap AI keyword pre-filter before any LLM call.
+# category:  lab | media | blog | community | research | code | video | signal
+#
+# Endpoint status is checked live: `ainews sources check` (results in docs/SOURCES.md).
+
+sources:
+  # --- AI companies & labs ------------------------------------------------------
+  - {key: openai, name: OpenAI, kind: rss, category: lab, authority: 0.98, url: "https://openai.com/news/rss.xml"}
+  - key: anthropic
+    name: Anthropic
+    kind: web
+    category: lab
+    authority: 0.98
+    url: "https://www.anthropic.com/news"
+    options: {link_pattern: '^https://www\.anthropic\.com/news/[a-z0-9-]+$', max_new: 6}
+  - {key: deepmind, name: Google DeepMind, kind: rss, category: lab, authority: 0.96, url: "https://deepmind.google/blog/rss.xml"}
+  - {key: google-research, name: Google Research, kind: rss, category: lab, authority: 0.93, url: "https://research.google/blog/rss/"}
+  - {key: google-ai-blog, name: Google AI Blog, kind: rss, category: lab, authority: 0.94, url: "https://blog.google/technology/ai/rss/"}
+  - {key: microsoft-research, name: Microsoft Research, kind: rss, category: lab, authority: 0.92, ai_only: false, url: "https://www.microsoft.com/en-us/research/feed/"}
+  - {key: meta-engineering, name: Meta Engineering, kind: rss, category: lab, authority: 0.9, ai_only: false, url: "https://engineering.fb.com/feed/"}
+  - {key: nvidia-blog, name: NVIDIA Blog, kind: rss, category: lab, authority: 0.9, ai_only: false, url: "https://blogs.nvidia.com/feed/"}
+  - {key: nvidia-dev, name: NVIDIA Developer, kind: rss, category: lab, authority: 0.85, ai_only: false, url: "https://developer.nvidia.com/blog/feed"}
+  - {key: huggingface, name: Hugging Face, kind: rss, category: lab, authority: 0.9, url: "https://huggingface.co/blog/feed.xml"}
+  - {key: mistral, name: Mistral AI, kind: rss, category: lab, authority: 0.94, url: "https://mistral.ai/news/rss"}
+  - key: xai
+    name: xAI
+    kind: web
+    category: lab
+    authority: 0.93
+    url: "https://x.ai/news"
+    options: {link_pattern: '^https://x\.ai/news/[a-z0-9-]+$', max_new: 6}
+  - {key: aws-ml, name: AWS Machine Learning, kind: rss, category: lab, authority: 0.82, url: "https://aws.amazon.com/blogs/machine-learning/feed/"}
+  - {key: apple-ml, name: Apple Machine Learning Research, kind: rss, category: lab, authority: 0.9, url: "https://machinelearning.apple.com/rss.xml"}
+  - {key: qwen, name: Qwen (Alibaba), kind: rss, category: lab, authority: 0.88, url: "https://qwenlm.github.io/blog/index.xml"}
+  - {key: bair, name: BAIR Blog, kind: rss, category: research, authority: 0.85, url: "https://bair.berkeley.edu/blog/feed.xml"}
+  # Meta AI blog (ai.meta.com/blog) renders client-side: no links in HTML, no feed.
+  # Alternative in use: Meta Engineering feed above + press coverage.
+
+  # --- Tech media -----------------------------------------------------------------
+  - {key: techcrunch-ai, name: TechCrunch, kind: rss, category: media, authority: 0.82, url: "https://techcrunch.com/category/artificial-intelligence/feed/"}
+  - {key: verge-ai, name: The Verge, kind: rss, category: media, authority: 0.8, url: "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml"}
+  - {key: ars-ai, name: Ars Technica, kind: rss, category: media, authority: 0.84, url: "https://arstechnica.com/ai/feed/"}
+  - {key: mit-tr-ai, name: MIT Technology Review, kind: rss, category: media, authority: 0.86, url: "https://www.technologyreview.com/topic/artificial-intelligence/feed"}
+  - {key: wired-ai, name: WIRED, kind: rss, category: media, authority: 0.8, url: "https://www.wired.com/feed/tag/ai/latest/rss"}
+  - {key: the-decoder, name: The Decoder, kind: rss, category: media, authority: 0.75, url: "https://the-decoder.com/feed/"}
+  - {key: habr-ai, name: Хабр (ИИ), kind: rss, category: media, authority: 0.6, url: "https://habr.com/ru/rss/hubs/artificial_intelligence/articles/"}
+  # VentureBeat answered HTTP 429 to our checks (2026-09-27). Kept disabled.
+  - {key: venturebeat-ai, name: VentureBeat, kind: rss, category: media, authority: 0.75, enabled: false, url: "https://venturebeat.com/category/ai/feed/"}
+
+  # --- Research & author blogs -------------------------------------------------------
+  - {key: simon-willison, name: Simon Willison, kind: rss, category: blog, authority: 0.8, ai_only: false, url: "https://simonwillison.net/atom/everything/"}
+  - {key: import-ai, name: Import AI (Jack Clark), kind: rss, category: blog, authority: 0.8, url: "https://importai.substack.com/feed"}
+  - {key: interconnects, name: Interconnects (Nathan Lambert), kind: rss, category: blog, authority: 0.8, url: "https://www.interconnects.ai/feed"}
+  - {key: latent-space, name: Latent Space, kind: rss, category: blog, authority: 0.75, url: "https://www.latent.space/feed"}
+  - {key: ahead-of-ai, name: Ahead of AI (Sebastian Raschka), kind: rss, category: blog, authority: 0.78, url: "https://magazine.sebastianraschka.com/feed"}
+  - {key: one-useful-thing, name: One Useful Thing (Ethan Mollick), kind: rss, category: blog, authority: 0.75, url: "https://www.oneusefulthing.org/feed"}
+
+  # --- Research papers --------------------------------------------------------------
+  - key: hf-daily-papers
+    name: Hugging Face Daily Papers
+    kind: hf_papers
+    category: research
+    authority: 0.72
+    url: "https://huggingface.co/api/daily_papers?limit=50"
+    options: {min_upvotes: 25}
+  # Raw arXiv is hundreds of papers/day — too noisy for the free LLM quota. Off by default;
+  # HF Daily Papers (community upvotes) is the curated alternative above.
+  - {key: arxiv-cl, name: arXiv cs.CL, kind: arxiv, category: research, authority: 0.6, enabled: false, url: "https://export.arxiv.org/api/query?search_query=cat:cs.CL&sortBy=submittedDate&sortOrder=descending&max_results=50"}
+
+  # --- Community ------------------------------------------------------------------------
+  - key: hn-front
+    name: Hacker News
+    kind: hn
+    category: community
+    authority: 0.6
+    ai_only: false
+    url: "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=50"
+    options: {min_points: 80}
+  - key: hn-ai
+    name: Hacker News (AI)
+    kind: hn
+    category: community
+    authority: 0.6
+    ai_only: false
+    url: "https://hn.algolia.com/api/v1/search_by_date?query=AI&tags=story&numericFilters=points%3E60&hitsPerPage=50"
+    options: {min_points: 60}
+  # Reddit rate-limits anonymous RSS (HTTP 429 seen for some subreddits). Best effort:
+  # failures are isolated and shown on the dashboard. Reliable access needs OAuth (not used).
+  - {key: reddit-localllama, name: r/LocalLLaMA, kind: reddit, category: community, authority: 0.5, url: "https://www.reddit.com/r/LocalLLaMA/top/.rss?t=day"}
+  - {key: reddit-ml, name: r/MachineLearning, kind: reddit, category: community, authority: 0.5, url: "https://www.reddit.com/r/MachineLearning/top/.rss?t=day"}
+  - {key: reddit-singularity, name: r/singularity, kind: reddit, category: community, authority: 0.4, url: "https://www.reddit.com/r/singularity/top/.rss?t=day"}
+
+  # --- Code releases (only x.y / x.y.0 releases; patches & RCs filtered) -------------------
+  - {key: gh-ollama, name: Ollama releases, kind: github, category: code, authority: 0.8, url: "https://github.com/ollama/ollama/releases.atom", options: {release_filter: minor}}
+  - {key: gh-vllm, name: vLLM releases, kind: github, category: code, authority: 0.8, url: "https://github.com/vllm-project/vllm/releases.atom", options: {release_filter: minor}}
+  - {key: gh-transformers, name: Transformers releases, kind: github, category: code, authority: 0.8, url: "https://github.com/huggingface/transformers/releases.atom", options: {release_filter: minor}}
+  - {key: gh-pytorch, name: PyTorch releases, kind: github, category: code, authority: 0.85, url: "https://github.com/pytorch/pytorch/releases.atom", options: {release_filter: minor}}
+
+  # --- YouTube (public channel RSS, no API key) --------------------------------------------
+  - {key: yt-openai, name: OpenAI (YouTube), kind: youtube, category: video, authority: 0.9, url: "https://www.youtube.com/feeds/videos.xml?channel_id=UCXZCJLdBC09xxGZ6gcdrc6A"}
+  - {key: yt-deepmind, name: Google DeepMind (YouTube), kind: youtube, category: video, authority: 0.88, url: "https://www.youtube.com/feeds/videos.xml?channel_id=UCP7jMXSY2xbc3KCAE0MHQ-A"}
+  - {key: yt-anthropic, name: Anthropic (YouTube), kind: youtube, category: video, authority: 0.88, url: "https://www.youtube.com/feeds/videos.xml?channel_id=UCrDwWp7EBBv4NwvScIpBDOA"}
+
+  # --- Signals (no stories; boosts ranking of matching stories) ---------------------------
+  - {key: google-trends-us, name: Google Trends (US), kind: trends, category: signal, authority: 0, url: "https://trends.google.com/trending/rss?geo=US"}
