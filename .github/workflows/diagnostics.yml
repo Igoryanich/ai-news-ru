@@ -1,0 +1,37 @@
+name: diagnostics
+
+# Manual live checks of the cloud configuration. Secrets stay inside the runner; the output
+# contains only non-secret facts (model answers, cosine values, bot/channel names, rights).
+
+on:
+  workflow_dispatch:
+    inputs:
+      check:
+        description: "What to check"
+        required: true
+        type: choice
+        options: [telegram-check, ai-check, sources-check]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.5-flash-lite' }}
+      GEMINI_EMBED_MODEL: ${{ vars.GEMINI_EMBED_MODEL || 'gemini-embedding-001' }}
+      HTTP_USER_AGENT: "AINewsRuBot/0.1 (RSS reader; +https://github.com/${{ github.repository }})"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: pip install -r requirements.txt && pip install --no-deps .
+      - run: python -m ainews ${{ inputs.check }}

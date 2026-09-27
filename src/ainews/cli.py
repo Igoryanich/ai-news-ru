@@ -55,6 +55,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("grant-dashboard", help="create/update the read-only dashboard DB role")
     sub.add_parser("check-privileges", help="verify anon/authenticated cannot read the schema")
     sub.add_parser("status", help="print recent runs and queue state")
+    sub.add_parser("ai-check", help="live check: model, structured JSON, embeddings, dedup calibration")
+    sub.add_parser("telegram-check", help="live check: bot, channel, posting rights")
     args = ap.parse_args(argv)
 
     settings = Settings()
@@ -78,6 +80,18 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "sources-check":
         return asyncio.run(_sources_check(settings))
+
+    if args.cmd in ("ai-check", "telegram-check"):
+        from . import diagnostics
+
+        fn = diagnostics.ai_check if args.cmd == "ai-check" else diagnostics.telegram_check
+        report = asyncio.run(fn(settings))
+        text = json.dumps(report, ensure_ascii=False, indent=2)
+        print(text)
+        if path := os.environ.get("GITHUB_STEP_SUMMARY"):
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(f"## {args.cmd}\n```json\n{text}\n```\n")
+        return 0 if report.get("ok", True) else 3
 
     engine = make_engine(settings)
     sessions = session_factory(engine)
