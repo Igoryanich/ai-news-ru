@@ -49,7 +49,7 @@ BeautifulSoup, rapidfuzz, pytest. Без Redis/Celery/Kafka/Docker.
 
 Подробности: [docs/OPERATIONS.md](docs/OPERATIONS.md) (запуск, восстановление, бюджет),
 [docs/SOURCES.md](docs/SOURCES.md) (проверка источников), [docs/DECISIONS.md](docs/DECISIONS.md)
-(выбор модели, сравнение с AI Newsroom, ограничения).
+(выбор модели, сравнение с AI Newsroom, ограничения), [docs/STATUS.md](docs/STATUS.md) (что проверено и что осталось).
 
 ## Формат поста
 
