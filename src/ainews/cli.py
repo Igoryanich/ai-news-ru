@@ -55,6 +55,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("grant-dashboard", help="create/update the read-only dashboard DB role")
     sub.add_parser("check-privileges", help="verify anon/authenticated cannot read the schema")
     sub.add_parser("status", help="print recent runs and queue state")
+    du = sub.add_parser("due", help="exit 0 if a full cycle is due (hourly cron gate), else 1")
+    du.add_argument("--min-hours", type=float, default=3.5)
     sub.add_parser("ai-check", help="live check: model, structured JSON, embeddings, dedup calibration")
     sub.add_parser("telegram-check", help="live check: bot, channel, posting rights")
     sr = sub.add_parser("stories-report", help="top recent stories with score components (Markdown)")
@@ -171,6 +173,18 @@ def main(argv: list[str] | None = None) -> int:
             Path(args.out).parent.mkdir(parents=True, exist_ok=True)
             Path(args.out).write_text("\n".join(lines), encoding="utf-8")
             print(f"wrote {args.out}")
+        elif args.cmd == "due":
+            from datetime import timedelta
+
+            from sqlalchemy import select
+
+            from .models import Run, utcnow
+
+            last = s.scalar(select(Run.started_at).where(Run.kind == "cycle", Run.status.in_(("ok", "partial")))
+                            .order_by(Run.started_at.desc()).limit(1))
+            due = last is None or last <= utcnow() - timedelta(hours=args.min_hours)
+            print(f"last successful cycle: {last.isoformat() if last else 'never'}; due: {due}")
+            return 0 if due else 1
         elif args.cmd == "status":
             from sqlalchemy import func, select
 

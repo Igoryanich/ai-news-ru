@@ -1,13 +1,14 @@
 name: news-cycle
 
-# The production scheduler. Every 4 hours: collect → dedup → rank → draft → publish.
+# The production scheduler: a full cycle every ~4 hours (collect → dedup → rank → draft → publish).
 # Runs entirely in GitHub's cloud against Supabase; no local machine involved.
-# Note: GitHub may delay scheduled runs under load (especially at the top of the hour),
-# so the cron uses minute 17 and exact timing is not guaranteed.
+# GitHub may delay or drop scheduled runs under load (observed: a 3.5 h delay), so the workflow
+# fires HOURLY and a cheap gate runs the full cycle only when ≥ 3.5 h passed since the last
+# successful one. A dropped slot therefore costs ~1 hour, not 4. Exact timing is not guaranteed.
 
 on:
   schedule:
-    - cron: "17 */4 * * *"
+    - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
       note:
@@ -53,25 +54,37 @@ jobs:
           cache-dependency-path: requirements.txt
       - name: Install
         run: pip install -r requirements.txt && pip install --no-deps .
+      - name: Is a cycle due?
+        id: due
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || python -m ainews due --min-hours 3.5; then
+            echo "due=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "due=false" >> "$GITHUB_OUTPUT"; echo "Not due yet — skipping this hourly slot."
+          fi
       - name: Check configuration
+        if: steps.due.outputs.due == 'true'
         run: |
           test -n "$DATABASE_URL" || { echo "::error::secret DATABASE_URL is not set"; exit 1; }
           case "$DATABASE_URL" in *:6543/*) echo "::error::use the Supabase SESSION pooler (port 5432), not the transaction pooler (6543)"; exit 1;; esac
           test -n "$GEMINI_API_KEY" || echo "::warning::GEMINI_API_KEY not set — AI stages will be skipped"
           if [ "$DRY_RUN" != "true" ]; then test -n "$TELEGRAM_BOT_TOKEN" -a -n "$TELEGRAM_CHAT_ID" || { echo "::error::Telegram secrets missing while DRY_RUN=false"; exit 1; }; fi
       - name: Migrate database
+        if: steps.due.outputs.due == 'true'
         run: alembic upgrade head
       - name: Database privileges
+        if: steps.due.outputs.due == 'true'
         run: |
           python -m ainews grant-dashboard
           python -m ainews check-privileges
       - name: Run cycle
+        if: steps.due.outputs.due == 'true'
         run: python -m ainews cycle --trigger "${{ github.event_name }}"
       - name: Export recent posts for review
-        if: always()
+        if: always() && steps.due.outputs.due == 'true'
         run: python -m ainews show-posts --out out/posts.md || true
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.due.outputs.due == 'true'
         with:
           name: posts-${{ github.run_id }}
           path: out/posts.md
