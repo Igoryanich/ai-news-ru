@@ -57,15 +57,16 @@ def json_schema_for(model: type[BaseModel]) -> dict:
     raw = model.model_json_schema()
     defs = raw.pop("$defs", {})
 
-    def clean(node):
+    def clean(node, *, is_properties: bool = False):
         if isinstance(node, dict):
-            if "$ref" in node:
+            if "$ref" in node and not is_properties:
                 return clean(defs[node["$ref"].split("/")[-1]])
             out = {}
             for k, v in node.items():
-                if k in ("title", "default", "examples"):
+                # Inside "properties" the keys are field NAMES (a field may be called "title").
+                if not is_properties and k in ("title", "default", "examples"):
                     continue
-                out[k] = clean(v)
+                out[k] = clean(v, is_properties=(k == "properties" and not is_properties))
             return out
         if isinstance(node, list):
             return [clean(x) for x in node]

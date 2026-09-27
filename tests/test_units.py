@@ -142,3 +142,15 @@ def test_gemini_error_classification():
     assert isinstance(e, RateLimited) and e.retry_after == 17
     assert isinstance(classify_error(503, None), Transient)
     assert isinstance(classify_error(400, {"error": {"message": "bad"}}), Permanent)
+
+
+def test_json_schema_keeps_fields_named_title():
+    from ainews.editorial_schemas import TriageResponse
+    from ainews.llm.gateway import json_schema_for
+
+    sch = json_schema_for(PostDraft)
+    assert "title" in sch["properties"] and "title" in sch["required"]
+    assert set(sch["required"]) <= set(sch["properties"])
+    assert "title" not in sch["properties"]["title"]  # metadata stripped, field kept
+    tri = json_schema_for(TriageResponse)
+    assert tri["properties"]["items"]["items"]["properties"]["category"]["enum"]
