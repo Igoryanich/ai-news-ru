@@ -141,7 +141,7 @@ async def collect_all(settings: Settings, sessions: sessionmaker[Session], clien
                 return source_id, spec, None, exc, int((time.monotonic() - started) * 1000)
 
     results = await asyncio.gather(*(one(i, sp) for i, sp in sources))
-    stats = {"sources_ok": 0, "sources_failed": 0, "items_seen": 0, "items_new": 0, "filtered": {}}
+    stats = {"sources_ok": 0, "sources_failed": 0, "items_seen": 0, "items_new": 0, "filtered": {}, "failed": {}}
     trend_terms: list[str] = []
     with sessions() as s:
         for source_id, _, result, exc, ms in results:
@@ -154,6 +154,7 @@ async def collect_all(settings: Settings, sessions: sessionmaker[Session], clien
                 src.last_error_at, src.last_error = utcnow(), msg
                 src.consecutive_failures += 1
                 stats["sources_failed"] += 1
+                stats["failed"][src.key] = msg[:80]
             else:
                 new, reasons = store_items(s, settings, src, result.items)
                 run.status, run.http_status = "ok", result.http_status
