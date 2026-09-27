@@ -69,7 +69,8 @@ class LLMProvider(Protocol):
     embed_model: str
 
     async def generate_json(
-        self, *, system: str, user: str, schema: dict, max_output_tokens: int, temperature: float
+        self, *, system: str, user: str, schema: dict, max_output_tokens: int, temperature: float,
+        model: str | None = None,
     ) -> GenerateResult: ...
 
     async def embed(self, texts: list[str], dims: int) -> EmbedResult: ...

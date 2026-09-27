@@ -92,7 +92,9 @@ class GeminiProvider:
             raise Transient("unreadable response body")
         return body
 
-    async def generate_json(self, *, system, user, schema, max_output_tokens, temperature) -> GenerateResult:
+    async def generate_json(
+        self, *, system, user, schema, max_output_tokens, temperature, model: str | None = None
+    ) -> GenerateResult:
         config: dict = {
             "responseMimeType": "application/json",
             "responseJsonSchema": schema,
@@ -106,7 +108,7 @@ class GeminiProvider:
             "contents": [{"role": "user", "parts": [{"text": user}]}],
             "generationConfig": config,
         }
-        body = await self._post(f"models/{self.model}:generateContent", payload)
+        body = await self._post(f"models/{model or self.model}:generateContent", payload)
         usage = _usage(body.get("usageMetadata"))
         if block := (body.get("promptFeedback") or {}).get("blockReason"):
             raise Permanent(f"prompt blocked: {block}")

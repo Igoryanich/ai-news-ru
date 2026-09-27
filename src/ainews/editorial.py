@@ -11,11 +11,11 @@ from .cluster import cosine
 from .collectors import fetch_article_text
 from .config import Settings
 from .db import kv_get
-from .editorial_schemas import PostDraft, TriageResponse
+from .editorial_schemas import DedupResponse, PostDraft, TriageResponse
 from .llm.gateway import AIGateway, AIUnavailable, InvalidOutput
 from .llm.gemini import dumps
 from .models import Article, Publication, Source, Story, utcnow
-from .prompts import COMPOSE_SYSTEM, PROMPT_VERSION, TRIAGE_SYSTEM
+from .prompts import COMPOSE_SYSTEM, DEDUP_SYSTEM, PROMPT_VERSION, TRIAGE_SYSTEM
 from .ranking import components, score, trend_hit
 from .render import render_post
 from .textutil import clip
@@ -103,20 +103,42 @@ async def triage(s: Session, settings: Settings, gateway: AIGateway) -> dict:
     return stats
 
 
-def _merge_into_published(s: Session, settings: Settings, st: Story) -> bool:
-    """Publish-time guard: an unpublished story that is near-identical to one already covered
-    in the suppression window is folded into it instead of producing a second post."""
+async def _merge_into_published(s: Session, settings: Settings, st: Story, gateway: AIGateway) -> bool:
+    """Publish-time guard: an unpublished story that covers the same event as one already
+    covered in the suppression window is folded into it instead of producing a second post.
+    Strong cosine folds directly; the grey zone is confirmed by one LLM check."""
     since = utcnow() - timedelta(hours=settings.story_window_hours)
-    for pub in s.scalars(
+    covered = s.scalars(
         select(Story).where(Story.status.in_(("published", "queued", "dry_run")), Story.published_at >= since)
-    ):
-        if cosine(st.centroid, pub.centroid) >= settings.embed_merge_strong:
-            for a in s.scalars(select(Article).where(Article.story_id == st.id)):
-                a.story_id, a.match_reason = pub.id, "folded at publish time (update of covered story)"
-            st.status, st.decision_note = "merged", f"update of story {pub.id}; suppressed"
-            s.commit()
-            return True
-    return False
+    ).all()
+    scored = sorted(((cosine(st.centroid, p.centroid), p) for p in covered), key=lambda x: -x[0])
+    target, reason = None, ""
+    if scored and scored[0][0] >= settings.embed_merge_strong:
+        target, reason = scored[0][1], f"cos={scored[0][0]:.3f}"
+    else:
+        grey = [(c, p) for c, p in scored[:3] if c >= settings.embed_merge_gray]
+        if grey:
+            mine = [a.title for a, _ in _members(s, st)][:3]
+            pairs = [
+                {"pair": i, "A": {"title": st.title, "text": " / ".join(mine)},
+                 "B": {"titles": [(p.draft or {}).get("title", p.title), p.title]}}
+                for i, (_, p) in enumerate(grey)
+            ]
+            try:
+                resp = await gateway.generate("dedup", DEDUP_SYSTEM, dumps({"pairs": pairs}), DedupResponse, temperature=0)
+                for v in resp.verdicts:
+                    if v.same_event and 0 <= v.pair < len(grey):
+                        target, reason = grey[v.pair][1], f"LLM same event (cos={grey[v.pair][0]:.3f})"
+                        break
+            except InvalidOutput:
+                pass  # conservative: keep separate
+    if target is None:
+        return False
+    for a in s.scalars(select(Article).where(Article.story_id == st.id)):
+        a.story_id, a.match_reason = target.id, f"folded at publish time: {reason}"
+    st.status, st.decision_note = "merged", f"same event as story {target.id} ({reason}); suppressed"
+    s.commit()
+    return True
 
 
 async def compose_and_queue(
@@ -139,7 +161,7 @@ async def compose_and_queue(
             st.decision_note = f"importance {st.importance} < {settings.publish_threshold}"
             stats["below_threshold"] += 1
             continue
-        if _merge_into_published(s, settings, st):
+        if await _merge_into_published(s, settings, st, gateway):
             stats["suppressed"] += 1
             continue
         if composed >= settings.max_compose_per_cycle:
@@ -195,11 +217,13 @@ async def _compose(s, settings, gateway, client, st: Story) -> PostDraft:
         "other_outlets_count": max(0, st.domain_count - 1),
         "materials": docs,
     }
-    draft = await gateway.generate("compose", COMPOSE_SYSTEM, dumps(task), PostDraft, temperature=0.4)
+    model = settings.gemini_compose_model or None
+    draft = await gateway.generate("compose", COMPOSE_SYSTEM, dumps(task), PostDraft, temperature=0.4, model=model)
     if major and not (draft.impact_users and draft.impact_developers and draft.impact_business):
         task["note"] = "Это крупная история: обязательно заполни impact_users, impact_developers, impact_business."
         try:
-            draft = await gateway.generate("compose", COMPOSE_SYSTEM, dumps(task), PostDraft, temperature=0.4)
+            draft = await gateway.generate("compose", COMPOSE_SYSTEM, dumps(task), PostDraft, temperature=0.4,
+                                           model=model)
         except InvalidOutput:
             pass  # keep the first valid draft; impact sections are rendered only when present
     return draft
@@ -210,7 +234,9 @@ def _queue(s: Session, settings: Settings, st: Story, draft: PostDraft) -> None:
     primary, psrc = members[0]
     name = psrc.name if psrc.kind not in ("hn", "reddit") else primary.domain
     others = [n for n in dict.fromkeys(src.name if src.kind not in ("hn", "reddit") else a.domain for a, src in members[1:]) if n != name]
-    rumor = st.rumor or draft.rumor
+    # The drafting step saw the full material (and the heuristic hint) — its verdict is final,
+    # so the label always matches the wording of the post.
+    rumor = draft.rumor
     text = render_post(
         draft,
         importance=st.importance,

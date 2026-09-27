@@ -38,6 +38,7 @@ jobs:
       TELEGRAM_TARGET: ${{ vars.TELEGRAM_TARGET || 'telegram:main' }}
       GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.5-flash-lite' }}
       GEMINI_EMBED_MODEL: ${{ vars.GEMINI_EMBED_MODEL || 'gemini-embedding-001' }}
+      GEMINI_COMPOSE_MODEL: ${{ vars.GEMINI_COMPOSE_MODEL || '' }}
       LLM_DAILY_REQUEST_LIMIT: ${{ vars.LLM_DAILY_REQUEST_LIMIT || '150' }}
       PUBLISH_THRESHOLD: ${{ vars.PUBLISH_THRESHOLD || '55' }}
       MAIN_THRESHOLD: ${{ vars.MAIN_THRESHOLD || '80' }}

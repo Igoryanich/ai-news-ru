@@ -83,13 +83,14 @@ class AIGateway:
         self.stopped_reason: str | None = None
 
     # ---- accounting -----------------------------------------------------------------
-    def _record(self, kind: str, purpose: str, status: str, latency_ms: int, usage: Usage | None, error=None):
+    def _record(self, kind: str, purpose: str, status: str, latency_ms: int, usage: Usage | None, error=None,
+                model: str | None = None):
         with self.sessions() as s:
             s.add(
                 LLMCall(
                     quota_day=quota_day(),
                     provider=self.provider.name,
-                    model=self.provider.embed_model if kind == "embed" else self.provider.model,
+                    model=model or (self.provider.embed_model if kind == "embed" else self.provider.model),
                     kind=kind,
                     purpose=purpose,
                     status=status,
@@ -170,7 +171,9 @@ class AIGateway:
             latency = int((time.monotonic() - started) * 1000)
             return result, latency
 
-    async def generate(self, purpose: str, system: str, user: str, schema_model: type[T], *, temperature=0.3) -> T:
+    async def generate(
+        self, purpose: str, system: str, user: str, schema_model: type[T], *, temperature=0.3, model: str | None = None
+    ) -> T:
         schema = json_schema_for(schema_model)
         user = user[: self.s.llm_max_input_chars]
         prompt = user
@@ -182,13 +185,14 @@ class AIGateway:
                     schema=schema,
                     max_output_tokens=self.s.llm_max_output_tokens,
                     temperature=temperature,
+                    **({"model": model} if model else {}),
                 )
 
             result, latency = await self._call("generate", purpose, call)
             try:
                 parsed = schema_model.model_validate(json.loads(result.text))
             except (ValueError, ValidationError) as exc:
-                self._record("generate", purpose, "invalid", latency, result.usage, _short(exc))
+                self._record("generate", purpose, "invalid", latency, result.usage, _short(exc), model=model)
                 if repair == 0:
                     prompt = (
                         user
@@ -198,7 +202,7 @@ class AIGateway:
                     )
                     continue
                 raise InvalidOutput(_short(exc)) from None
-            self._record("generate", purpose, "ok", latency, result.usage)
+            self._record("generate", purpose, "ok", latency, result.usage, model=model)
             return parsed
         raise InvalidOutput("unreachable")  # pragma: no cover
 

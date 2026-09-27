@@ -114,3 +114,24 @@ def test_second_concurrent_run_is_locked(settings, engine, sessions, world):
     with pipeline_lock(engine, sessions):
         stats = run(settings, engine, FakeProvider())
     assert stats == {"status": "locked"}
+
+
+def test_publish_guard_folds_grey_zone_duplicate_after_llm_check(settings, sessions):
+    import math
+
+    from ainews.editorial import _merge_into_published
+    from ainews.llm.gateway import AIGateway
+    from ainews.models import utcnow
+
+    s2 = settings.model_copy(update={"embed_merge_strong": 0.93, "embed_merge_gray": 0.86})
+    gw = AIGateway(FakeProvider(), sessions, s2, sleep=no_sleep)
+    c = 0.88
+    with sessions() as s:
+        pub = Story(title="Google launches Gemini 3.8", status="dry_run", published_at=utcnow(), centroid=[1.0, 0.0])
+        same = Story(title="Gemini 3.8 rollout details", status="triaged", centroid=[c, math.sqrt(1 - c * c)])
+        other = Story(title="New Llama release", status="triaged", centroid=[c, math.sqrt(1 - c * c)])
+        s.add_all([pub, same, other])
+        s.commit()
+        assert asyncio.run(_merge_into_published(s, s2, same, gw)) is True
+        assert same.status == "merged"
+        assert asyncio.run(_merge_into_published(s, s2, other, gw)) is False  # LLM says different event
