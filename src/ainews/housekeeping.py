@@ -47,13 +47,14 @@ def prune(s: Session, settings: Settings) -> dict:
 def db_size_bytes(s: Session) -> int | None:
     if s.get_bind().dialect.name != "postgresql":
         return None
-    return s.scalar(
+    size = s.scalar(
         text(
             "SELECT COALESCE(SUM(pg_total_relation_size(format('%I.%I', schemaname, tablename))), 0) "
             "FROM pg_tables WHERE schemaname = :schema"
         ),
         {"schema": SCHEMA},
     )
+    return int(size or 0)  # Postgres SUM() returns Decimal (not JSON-serialisable)
 
 
 def table_counts(s: Session) -> dict[str, int]:

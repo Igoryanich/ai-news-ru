@@ -27,8 +27,8 @@ jobs:
       GEMINI_EMBED_MODEL: ${{ vars.GEMINI_EMBED_MODEL || 'gemini-embedding-001' }}
       HTTP_USER_AGENT: "AINewsRuBot/0.1 (RSS reader; +https://github.com/${{ github.repository }})"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
