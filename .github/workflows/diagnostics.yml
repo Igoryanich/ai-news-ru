@@ -10,7 +10,7 @@ on:
         description: "What to check"
         required: true
         type: choice
-        options: [telegram-check, ai-check, sources-check, show-posts]
+        options: [telegram-check, ai-check, sources-check, show-posts, stories-report]
 
 permissions:
   contents: read
@@ -37,7 +37,7 @@ jobs:
       - run: pip install -r requirements.txt && pip install --no-deps .
       - run: python -m ainews ${{ inputs.check }}
       - uses: actions/upload-artifact@v4
-        if: inputs.check == 'show-posts'
+        if: inputs.check == 'show-posts' || inputs.check == 'stories-report'
         with:
           name: posts-${{ github.run_id }}
           path: out/posts.md

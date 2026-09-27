@@ -57,6 +57,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("status", help="print recent runs and queue state")
     sub.add_parser("ai-check", help="live check: model, structured JSON, embeddings, dedup calibration")
     sub.add_parser("telegram-check", help="live check: bot, channel, posting rights")
+    sr = sub.add_parser("stories-report", help="top recent stories with score components (Markdown)")
+    sr.add_argument("--limit", type=int, default=40)
+    sr.add_argument("--out", default="out/posts.md")
     sp = sub.add_parser("show-posts", help="write recent publications (with scores) to a Markdown file")
     sp.add_argument("--limit", type=int, default=30)
     sp.add_argument("--out", default="out/posts.md")
@@ -145,6 +148,26 @@ def main(argv: list[str] | None = None) -> int:
                           f"Importance {st.importance if st else '-'}; компоненты: {comp}; "
                           f"материалов {st.article_count if st else '-'}, доменов {st.domain_count if st else '-'}",
                           "", "```html", p.text, "```", ""]
+            Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.out).write_text("\n".join(lines), encoding="utf-8")
+            print(f"wrote {args.out}")
+        elif args.cmd == "stories-report":
+            from datetime import timedelta
+
+            from sqlalchemy import select
+
+            from .models import Story, utcnow
+
+            rows = s.scalars(select(Story).where(Story.last_seen_at >= utcnow() - timedelta(hours=36))
+                             .order_by(Story.importance.desc()).limit(args.limit)).all()
+            lines = ["| Imp | статус | доменов | триаж s/i/p/b | компоненты | заголовок | причина |", "|---|---|---|---|---|---|---|"]
+            for st in rows:
+                t = st.triage or {}
+                pts = (st.score_components or {}).get("points", {})
+                comp = " ".join(f"{k[:4]}={v:g}" for k, v in pts.items() if v)
+                lines.append(f"| {st.importance} | {st.status} | {st.domain_count} | {t.get('scale')}/{t.get('industry_impact')}/"
+                             f"{t.get('practical_value')}/{t.get('broad_interest')} | {comp} | {st.title[:90]} | "
+                             f"{(t.get('reason') or '')[:120]} |")
             Path(args.out).parent.mkdir(parents=True, exist_ok=True)
             Path(args.out).write_text("\n".join(lines), encoding="utf-8")
             print(f"wrote {args.out}")
