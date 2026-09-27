@@ -64,7 +64,21 @@ async def telegram_check(settings: Settings) -> dict:
         if not me.get("ok"):
             return {"ok": False, "error": f"getMe failed: {me.get('description')}"}
         bot = me["result"]
-        chat = (await c.post(f"{base}/getChat", json={"chat_id": settings.telegram_chat_id})).json()
+        if not settings.telegram_chat_id:
+            # Private channel: find its id from updates the bot received (being added as admin
+            # produces `my_chat_member`; any post in the channel produces `channel_post`).
+            upd = (await c.post(f"{base}/getUpdates", json={
+                "timeout": 0, "allowed_updates": ["my_chat_member", "channel_post"]})).json()
+            chats = {}
+            for u in upd.get("result", []):
+                ch = (u.get("my_chat_member") or u.get("channel_post") or {}).get("chat") or {}
+                if ch.get("type") == "channel":
+                    chats[ch["id"]] = ch.get("title")
+            return {"ok": False, "bot": bot.get("username"),
+                    "error": "TELEGRAM_CHAT_ID not set",
+                    "channels_seen_by_bot": [{"chat_id": k, "title": v} for k, v in chats.items()],
+                    "hint": "set TELEGRAM_CHAT_ID to the chat_id above; if empty, post any message in the channel and rerun"}
+        chat =(await c.post(f"{base}/getChat", json={"chat_id": settings.telegram_chat_id})).json()
         if not chat.get("ok"):
             return {"ok": False, "bot": bot.get("username"), "error": f"getChat failed: {chat.get('description')}"}
         member = (await c.post(f"{base}/getChatMember",
