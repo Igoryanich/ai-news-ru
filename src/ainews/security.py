@@ -37,8 +37,9 @@ def grant_dashboard_role(s: Session, password: str) -> str:
     verifier = scram_verifier(password)
     exists = s.scalar(text("SELECT 1 FROM pg_roles WHERE rolname = :r"), {"r": DASHBOARD_ROLE})
     verb = "ALTER" if exists else "CREATE"
-    # Verifier is base64/$/: only — safe to inline as a quoted literal.
-    s.execute(text(f"{verb} ROLE {DASHBOARD_ROLE} WITH LOGIN NOINHERIT PASSWORD '{verifier}'"))
+    # Verifier is base64 plus "$" and ":" only — safe to inline as a quoted literal. Sent via the
+    # driver directly: SQLAlchemy text() would read ":xyz" inside it as a bind parameter.
+    s.connection().exec_driver_sql(f"{verb} ROLE {DASHBOARD_ROLE} WITH LOGIN NOINHERIT PASSWORD '{verifier}'")
     s.execute(text(f"ALTER ROLE {DASHBOARD_ROLE} SET default_transaction_read_only = on"))
     s.execute(text(f"ALTER ROLE {DASHBOARD_ROLE} SET statement_timeout = '15s'"))
     s.execute(text(f"GRANT USAGE ON SCHEMA {SCHEMA} TO {DASHBOARD_ROLE}"))
