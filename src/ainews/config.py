@@ -58,8 +58,8 @@ class Settings(BaseSettings):
     fulltext_fetch: bool = True
 
     # --- Dedup ----------------------------------------------------------------
-    embed_merge_strong: float = 0.90
-    embed_merge_gray: float = 0.80
+    embed_merge_strong: float = 0.93  # calibrated 2026-09-27: same event RU/EN 0.943–0.975
+    embed_merge_gray: float = 0.86  # different events of one company: 0.81–0.83
     title_merge_ratio: float = 88.0
     llm_dedup_check: bool = True
     max_dedup_pairs_per_cycle: int = 30
