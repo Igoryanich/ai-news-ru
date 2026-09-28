@@ -91,6 +91,7 @@ class AIGateway:
         self._sleep = sleep or asyncio.sleep
         # Stops are per kind: an embeddings outage must not stop drafting (and vice versa).
         self._stopped: dict[str, str] = {}
+        self._default_overloaded: str | None = None
 
     @property
     def stopped_reason(self) -> str | None:
@@ -198,20 +199,24 @@ class AIGateway:
     async def generate(
         self, purpose: str, system: str, user: str, schema_model: type[T], *, temperature=0.3, model: str | None = None
     ) -> T:
-        fallback = self.s.gemini_fallback_model
-        if model is not None or not fallback:
+        if model is not None:  # explicit model (e.g. the compose model): its own availability
             return await self._generate(purpose, system, user, schema_model, temperature=temperature, model=model)
-        try:  # default model; if it stays overloaded, one free fallback model (never a paid switch)
-            return await self._generate(purpose, system, user, schema_model, temperature=temperature, model=None,
-                                        overload_ok=True)
-        except ModelOverloaded as exc:
-            log.warning("default model overloaded (%s); trying fallback %s", exc, fallback)
+        if self._default_overloaded:
+            raise AIUnavailable(self._default_overloaded)
+        fallbacks = [m.strip() for m in self.s.gemini_fallback_model.split(",") if m.strip()]
+        chain: list[str | None] = [None, *fallbacks]  # default first, then free fallbacks — never a paid switch
+        for i, candidate in enumerate(chain):
+            last = i == len(chain) - 1
             try:
                 return await self._generate(purpose, system, user, schema_model, temperature=temperature,
-                                            model=fallback)
-            except ModelOverloaded as exc2:
-                self.stopped_reason = f"default and fallback models unavailable: {exc2}"
-                raise AIUnavailable(self.stopped_reason) from None
+                                            model=candidate, overload_ok=not last or candidate is not None)
+            except ModelOverloaded as exc:
+                if last:
+                    # Only the default chain is marked unavailable; explicit models may still work.
+                    self._default_overloaded = f"default and fallback models unavailable: {exc}"
+                    raise AIUnavailable(self._default_overloaded) from None
+                log.warning("model %s overloaded (%s); trying %s", candidate or "default", exc, chain[i + 1])
+        raise AIUnavailable("no model available")  # pragma: no cover
 
     async def _generate(self, purpose, system, user, schema_model, *, temperature, model, overload_ok=False):
         schema = json_schema_for(schema_model)

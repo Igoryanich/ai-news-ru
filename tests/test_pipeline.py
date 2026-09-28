@@ -99,13 +99,14 @@ def test_quota_exhaustion_defers_and_is_visible(settings, engine, sessions, worl
             raise QuotaExhausted("daily quota exhausted: GenerateRequestsPerDay")
 
     stats = run(settings, engine, NoQuota())
-    assert "quota" in stats["ai_deferred"]
+    deferred = lambda st: st.get("ai_deferred") or st.get("triage_deferred") or ""  # noqa: E731
+    assert "quota" in deferred(stats)
     with sessions() as s:
         assert s.scalar(select(func.count()).select_from(Publication)) == 0
     # Next cycle does not call the API at all while the block is active.
     provider = FakeProvider()
     stats = run(settings, engine, provider)
-    assert provider.calls["triage"] == 0 and "quota block" in stats["ai_deferred"]
+    assert provider.calls["triage"] == 0 and "quota block" in deferred(stats)
 
 
 def test_second_concurrent_run_is_locked(settings, engine, sessions, world):

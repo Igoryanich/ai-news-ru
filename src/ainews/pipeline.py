@@ -101,7 +101,12 @@ async def _cycle(settings, sessions, client, trigger, provider, publisher, sleep
                     degraded = True
                 stats["cluster"] = await cluster.cluster_pending(s, settings, gateway, allow_unembedded=degraded)
                 editorial.rerank(s, settings)
-                stats["triage"] = await editorial.triage(s, settings, gateway)
+                try:
+                    stats["triage"] = await editorial.triage(s, settings, gateway)
+                except AIUnavailable as exc:
+                    # Triage model busy: still draft stories already triaged (compose may use another model).
+                    s.rollback()
+                    stats["triage_deferred"] = str(exc)
                 editorial.rerank(s, settings)
                 stats["editorial"] = await editorial.compose_and_queue(s, settings, gateway, client)
             except AIUnavailable as exc:
