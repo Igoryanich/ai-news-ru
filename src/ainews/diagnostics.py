@@ -95,3 +95,27 @@ async def telegram_check(settings: Settings) -> dict:
             "bot_status": m.get("status"),
             "can_post_messages": can_post,
         }
+
+
+async def backup_llm_check(settings: Settings) -> dict:
+    """Draft one real Russian post through the backup provider (Groq) and validate it."""
+    from .editorial_schemas import PostDraft
+    from .prompts import COMPOSE_SYSTEM
+
+    if not settings.groq_api_key:
+        return {"ok": False, "error": "GROQ_API_KEY not set"}
+    task = {"importance": 72, "major_story": True, "need_impact_sections": True, "rumor_suspected": False,
+            "materials": [{"source": "Google", "published_at": "2026-09-23", "title": PAIRS[0][0],
+                           "text": "Google today released Gemini 3.8 Flash in the Gemini API and AI Studio. The model "
+                                   "is twice as fast as the previous Flash and costs the same. It supports a 1M-token "
+                                   "context window and is available to all developers starting today."}]}
+    async with httpx.AsyncClient(timeout=120) as client:
+        provider = build_provider(settings, client)
+        res = await provider.generate_json(system=COMPOSE_SYSTEM, user=json.dumps(task, ensure_ascii=False),
+                                           schema=json_schema_for(PostDraft), max_output_tokens=4096,
+                                           temperature=0.4, model="groq:openai/gpt-oss-120b")
+    try:
+        draft = PostDraft.model_validate_json(res.text)
+        return {"ok": True, "usage": res.usage.__dict__, "draft": draft.model_dump()}
+    except Exception as exc:  # show why, without secrets
+        return {"ok": False, "error": str(exc)[:500], "raw": res.text[:1500]}

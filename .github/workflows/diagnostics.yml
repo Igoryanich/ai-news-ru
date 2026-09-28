@@ -10,7 +10,7 @@ on:
         description: "What to check"
         required: true
         type: choice
-        options: [telegram-check, ai-check, sources-check, show-posts, stories-report]
+        options: [telegram-check, ai-check, backup-llm-check, sources-check, show-posts, stories-report]
 
 permissions:
   contents: read
@@ -22,6 +22,7 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.5-flash-lite' }}

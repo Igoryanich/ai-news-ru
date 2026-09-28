@@ -61,6 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     du.add_argument("--min-hours", type=float, default=3.5)
     sub.add_parser("ai-check", help="live check: model, structured JSON, embeddings, dedup calibration")
     sub.add_parser("telegram-check", help="live check: bot, channel, posting rights")
+    sub.add_parser("backup-llm-check", help="live check: draft one Russian post via the backup provider")
     sr = sub.add_parser("stories-report", help="top recent stories with score components (Markdown)")
     sr.add_argument("--limit", type=int, default=40)
     sr.add_argument("--out", default="out/posts.md")
@@ -91,10 +92,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "sources-check":
         return asyncio.run(_sources_check(settings))
 
-    if args.cmd in ("ai-check", "telegram-check"):
+    if args.cmd in ("ai-check", "telegram-check", "backup-llm-check"):
         from . import diagnostics
 
-        fn = diagnostics.ai_check if args.cmd == "ai-check" else diagnostics.telegram_check
+        fn = {"ai-check": diagnostics.ai_check, "telegram-check": diagnostics.telegram_check,
+              "backup-llm-check": diagnostics.backup_llm_check}[args.cmd]
         report = asyncio.run(fn(settings))
         text = json.dumps(report, ensure_ascii=False, indent=2)
         print(text)

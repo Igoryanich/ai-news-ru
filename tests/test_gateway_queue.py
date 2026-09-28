@@ -2,6 +2,7 @@ import asyncio
 import json
 
 import pytest
+import respx
 from conftest import FakePublisher, no_sleep
 from sqlalchemy import select
 
@@ -189,3 +190,47 @@ def test_default_model_overload_falls_back_to_free_fallback(settings, sessions):
     assert gen(gw).verdicts and gw.stopped_reason is None
     with sessions() as s:
         assert [r.model for r in s.scalars(select(LLMCall).where(LLMCall.status == "ok"))] == ["fallback-lite"]
+
+
+def test_router_sends_prefixed_models_to_backup_and_quota_moves_to_next_model(settings, sessions):
+    from ainews.llm.base import QuotaExhausted
+    from ainews.llm.openai_compat import RouterProvider
+
+    primary = Scripted([Transient("503")] * 20)  # every Gemini model busy
+    backup = Scripted([OK])
+    s2 = settings.model_copy(update={"llm_max_retries": 0, "groq_api_key": "k",
+                                     "gemini_fallback_model": "lite-2,groq:big-oss"})
+    gw = AIGateway(RouterProvider(primary, {"groq": backup}), sessions, s2, sleep=no_sleep)
+    assert gen(gw).verdicts and backup.calls == 1
+    # a per-model daily quota does not block the whole gateway
+    gw2 = AIGateway(RouterProvider(Scripted([QuotaExhausted("PerDay")]), {"groq": Scripted([OK])}), sessions,
+                    s2.model_copy(update={"gemini_fallback_model": "groq:big-oss"}), sleep=no_sleep)
+    assert gen(gw2).verdicts
+
+
+@respx.mock
+def test_openai_compat_provider_parses_and_classifies():
+    import httpx as _h
+
+    from ainews.llm.base import QuotaExhausted
+    from ainews.llm.openai_compat import OpenAICompatProvider
+
+    route = respx.post("https://api.groq.com/openai/v1/chat/completions")
+
+    async def call(client):
+        p = OpenAICompatProvider(client, name="groq", base_url="https://api.groq.com/openai/v1", api_key="k", model="m")
+        return await p.generate_json(system="s", user="u", schema={}, max_output_tokens=10, temperature=0)
+
+    async def go():
+        async with _h.AsyncClient() as c:
+            return await call(c)
+
+    route.mock(return_value=_h.Response(200, json={"choices": [{"message": {"content": OK}, "finish_reason": "stop"}],
+                                                    "usage": {"prompt_tokens": 5, "completion_tokens": 2}}))
+    assert asyncio.run(go()).usage.prompt_tokens == 5
+    route.mock(return_value=_h.Response(429, json={"error": {"message": "Rate limit reached ... tokens per day (TPD)"}}))
+    with pytest.raises(QuotaExhausted):
+        asyncio.run(go())
+    route.mock(return_value=_h.Response(429, headers={"retry-after": "7"}, json={"error": {"message": "per minute"}}))
+    with pytest.raises(RateLimited):
+        asyncio.run(go())

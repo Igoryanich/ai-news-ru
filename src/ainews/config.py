@@ -33,7 +33,11 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.5-flash-lite"
     gemini_embed_model: str = "gemini-embedding-001"
-    gemini_fallback_model: str = "gemini-3.1-flash-lite,gemini-3.7-flash"  # free-tier models, used in order only when the default is overloaded
+    # Free models tried in order only when the default is overloaded/exhausted. "groq:" entries go to Groq
+    # (skipped when GROQ_API_KEY is not set). Never a paid model.
+    gemini_fallback_model: str = "gemini-3.1-flash-lite,gemini-3.7-flash,groq:openai/gpt-oss-120b"
+    groq_api_key: str = ""
+    groq_reasoning_effort: str = "low"
     gemini_compose_model: str = ""  # optional stronger model for post drafting; empty = gemini_model
     gemini_thinking_level: str = ""  # empty = model default; e.g. "minimal" / "low"
     embed_dims: int = Field(256, ge=64, le=3072)

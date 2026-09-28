@@ -173,6 +173,9 @@ class AIGateway:
                 result = await fn()
             except QuotaExhausted as exc:
                 self._record(kind, purpose, exc.status, int((time.monotonic() - started) * 1000), None, exc)
+                if override:
+                    # Daily quota is per model: move on to the next model instead of stopping all AI.
+                    raise ModelOverloaded(f"model quota exhausted: {exc}") from None
                 self._block_until_reset(kind, str(exc))
                 raise AIUnavailable(self._stopped[kind]) from None
             except ProviderError as exc:
@@ -203,15 +206,23 @@ class AIGateway:
             return await self._generate(purpose, system, user, schema_model, temperature=temperature, model=model)
         if self._default_overloaded:
             raise AIUnavailable(self._default_overloaded)
-        fallbacks = [m.strip() for m in self.s.gemini_fallback_model.split(",") if m.strip()]
+        fallbacks = [
+            m.strip() for m in self.s.gemini_fallback_model.split(",")
+            if m.strip() and (not m.strip().startswith("groq:") or self.s.groq_api_key)
+        ]
         chain: list[str | None] = [None, *fallbacks]  # default first, then free fallbacks — never a paid switch
+        all_quota = True
         for i, candidate in enumerate(chain):
             last = i == len(chain) - 1
             try:
                 return await self._generate(purpose, system, user, schema_model, temperature=temperature,
                                             model=candidate, overload_ok=not last or candidate is not None)
             except ModelOverloaded as exc:
+                all_quota = all_quota and str(exc).startswith("model quota exhausted")
                 if last:
+                    if all_quota:  # every model is out of daily quota: pause AI until the Pacific reset
+                        self._block_until_reset("generate", str(exc))
+                        raise AIUnavailable(self._stopped["generate"]) from None
                     # Only the default chain is marked unavailable; explicit models may still work.
                     self._default_overloaded = f"default and fallback models unavailable: {exc}"
                     raise AIUnavailable(self._default_overloaded) from None
