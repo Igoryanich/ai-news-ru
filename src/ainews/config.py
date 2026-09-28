@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     llm_max_retry_wait_seconds: float = 65
     llm_max_input_chars: int = 24000
     llm_max_output_tokens: int = 4096
+    ai_time_budget_seconds: int = 1500  # stop new AI calls after 25 min; publishing still runs
 
     # --- Editorial ------------------------------------------------------------
     publish_threshold: int = Field(55, ge=0, le=100)

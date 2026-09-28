@@ -234,3 +234,15 @@ def test_openai_compat_provider_parses_and_classifies():
     route.mock(return_value=_h.Response(429, headers={"retry-after": "7"}, json={"error": {"message": "per minute"}}))
     with pytest.raises(RateLimited):
         asyncio.run(go())
+
+
+def test_overloaded_model_is_skipped_for_rest_of_run(settings, sessions):
+    from ainews.llm.openai_compat import RouterProvider
+
+    primary = Scripted([Transient("503")] * 3)
+    backup = Scripted([OK, OK])
+    s2 = settings.model_copy(update={"llm_max_retries": 0, "groq_api_key": "k", "gemini_fallback_model": "groq:x"})
+    gw = AIGateway(RouterProvider(primary, {"groq": backup}), sessions, s2, sleep=no_sleep)
+    gen(gw)
+    gen(gw)
+    assert primary.calls == 1 and backup.calls == 2  # second request went straight to the working model

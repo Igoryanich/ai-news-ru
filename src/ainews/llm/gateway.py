@@ -92,6 +92,8 @@ class AIGateway:
         # Stops are per kind: an embeddings outage must not stop drafting (and vice versa).
         self._stopped: dict[str, str] = {}
         self._default_overloaded: str | None = None
+        self._bad_models: dict[str, str] = {}  # model → reason, for the rest of this run
+        self._started = time.monotonic()
 
     @property
     def stopped_reason(self) -> str | None:
@@ -136,6 +138,10 @@ class AIGateway:
 
     def _check_available(self, kind: str) -> None:
         if kind in self._stopped:
+            raise AIUnavailable(self._stopped[kind])
+        if time.monotonic() - self._started > self.s.ai_time_budget_seconds:
+            # Leave time to publish what is ready before the CI job timeout kills the run.
+            self._stopped[kind] = f"AI time budget of {self.s.ai_time_budget_seconds}s used up this run"
             raise AIUnavailable(self._stopped[kind])
         with self.sessions() as s:
             block = kv_get(s, _block_key(kind)) or {}
@@ -203,14 +209,26 @@ class AIGateway:
         self, purpose: str, system: str, user: str, schema_model: type[T], *, temperature=0.3, model: str | None = None
     ) -> T:
         if model is not None:  # explicit model (e.g. the compose model): its own availability
-            return await self._generate(purpose, system, user, schema_model, temperature=temperature, model=model)
+            if model in self._bad_models:
+                raise ModelOverloaded(f"{model} unavailable earlier in this run: {self._bad_models[model]}")
+            try:
+                return await self._generate(purpose, system, user, schema_model, temperature=temperature,
+                                            model=model)
+            except ModelOverloaded as exc:
+                self._bad_models[model] = str(exc)[:200]
+                raise
         if self._default_overloaded:
             raise AIUnavailable(self._default_overloaded)
         fallbacks = [
             m.strip() for m in self.s.gemini_fallback_model.split(",")
             if m.strip() and (not m.strip().startswith("groq:") or self.s.groq_api_key)
         ]
-        chain: list[str | None] = [None, *fallbacks]  # default first, then free fallbacks — never a paid switch
+        # Default first, then free fallbacks — never a paid switch. Models that failed earlier in
+        # this run are skipped, so one outage does not cost minutes of retries on every request.
+        chain: list[str | None] = [m for m in [None, *fallbacks] if (m or "default") not in self._bad_models]
+        if not chain:
+            self._default_overloaded = "all models unavailable earlier in this run"
+            raise AIUnavailable(self._default_overloaded)
         all_quota = True
         for i, candidate in enumerate(chain):
             last = i == len(chain) - 1
@@ -218,6 +236,7 @@ class AIGateway:
                 return await self._generate(purpose, system, user, schema_model, temperature=temperature,
                                             model=candidate, overload_ok=not last or candidate is not None)
             except ModelOverloaded as exc:
+                self._bad_models[candidate or "default"] = str(exc)[:200]
                 all_quota = all_quota and str(exc).startswith("model quota exhausted")
                 if last:
                     if all_quota:  # every model is out of daily quota: pause AI until the Pacific reset
