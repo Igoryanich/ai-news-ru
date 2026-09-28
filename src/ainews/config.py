@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.5-flash-lite"
     gemini_embed_model: str = "gemini-embedding-001"
+    gemini_fallback_model: str = "gemini-3.1-flash-lite"  # free-tier model used only when the default is overloaded
     gemini_compose_model: str = ""  # optional stronger model for post drafting; empty = gemini_model
     gemini_thinking_level: str = ""  # empty = model default; e.g. "minimal" / "low"
     embed_dims: int = Field(256, ge=64, le=3072)

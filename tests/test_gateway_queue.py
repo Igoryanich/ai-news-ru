@@ -53,7 +53,7 @@ def test_retries_429_with_server_delay_then_records_tokens(settings, sessions):
 
 
 def test_retry_budget_is_bounded(settings, sessions):
-    s2 = settings.model_copy(update={"llm_max_retries": 2})
+    s2 = settings.model_copy(update={"llm_max_retries": 2, "gemini_fallback_model": ""})
     p = Scripted([Transient("x")] * 5)
     with pytest.raises(AIUnavailable):
         gen(AIGateway(p, sessions, s2, sleep=no_sleep))
@@ -180,3 +180,12 @@ def test_overloaded_override_model_does_not_stop_gateway(settings, sessions):
         asyncio.run(gw.generate("dedup", "sys", "{}", DedupResponse, model="big-model"))
     assert gw.stopped_reason is None
     assert gen(gw).verdicts  # default model still usable in the same run
+
+
+def test_default_model_overload_falls_back_to_free_fallback(settings, sessions):
+    s2 = settings.model_copy(update={"llm_max_retries": 0, "gemini_fallback_model": "fallback-lite"})
+    p = Scripted([Transient("503 high demand"), OK])
+    gw = AIGateway(p, sessions, s2, sleep=no_sleep)
+    assert gen(gw).verdicts and gw.stopped_reason is None
+    with sessions() as s:
+        assert [r.model for r in s.scalars(select(LLMCall).where(LLMCall.status == "ok"))] == ["fallback-lite"]

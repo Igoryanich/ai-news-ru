@@ -181,6 +181,22 @@ class AIGateway:
     async def generate(
         self, purpose: str, system: str, user: str, schema_model: type[T], *, temperature=0.3, model: str | None = None
     ) -> T:
+        fallback = self.s.gemini_fallback_model
+        if model is not None or not fallback:
+            return await self._generate(purpose, system, user, schema_model, temperature=temperature, model=model)
+        try:  # default model; if it stays overloaded, one free fallback model (never a paid switch)
+            return await self._generate(purpose, system, user, schema_model, temperature=temperature, model=None,
+                                        overload_ok=True)
+        except ModelOverloaded as exc:
+            log.warning("default model overloaded (%s); trying fallback %s", exc, fallback)
+            try:
+                return await self._generate(purpose, system, user, schema_model, temperature=temperature,
+                                            model=fallback)
+            except ModelOverloaded as exc2:
+                self.stopped_reason = f"default and fallback models unavailable: {exc2}"
+                raise AIUnavailable(self.stopped_reason) from None
+
+    async def _generate(self, purpose, system, user, schema_model, *, temperature, model, overload_ok=False):
         schema = json_schema_for(schema_model)
         user = user[: self.s.llm_max_input_chars]
         prompt = user
@@ -195,7 +211,7 @@ class AIGateway:
                     **({"model": model} if model else {}),
                 )
 
-            result, latency = await self._call("generate", purpose, call, override=bool(model))
+            result, latency = await self._call("generate", purpose, call, override=bool(model) or overload_ok)
             try:
                 parsed = schema_model.model_validate(json.loads(result.text))
             except (ValueError, ValidationError) as exc:
