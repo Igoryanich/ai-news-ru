@@ -125,14 +125,20 @@ async def _merge_into_published(s: Session, settings: Settings, st: Story, gatew
                  "B": {"titles": [(p.draft or {}).get("title", p.title), p.title]}}
                 for i, (_, p) in enumerate(grey)
             ]
-            try:
-                resp = await gateway.generate("dedup", DEDUP_SYSTEM, dumps({"pairs": pairs}), DedupResponse, temperature=0)
-                for v in resp.verdicts:
-                    if v.same_event and 0 <= v.pair < len(grey):
-                        target, reason = grey[v.pair][1], f"LLM same event (cos={grey[v.pair][0]:.3f})"
-                        break
-            except InvalidOutput:
-                pass  # conservative: keep separate
+            resp = None
+            for model in dict.fromkeys([None, settings.gemini_compose_model or None]):
+                try:
+                    resp = await gateway.generate("dedup", DEDUP_SYSTEM, dumps({"pairs": pairs}), DedupResponse,
+                                                  temperature=0, model=model)
+                    break
+                except (AIUnavailable, InvalidOutput) as exc:
+                    # Guard model busy: never block publishing on it. Strong-cosine duplicates were
+                    # already folded above; grey-zone pairs stay separate (conservative).
+                    log.warning("publish guard LLM check skipped (%s): %s", model or "default", exc)
+            for v in (resp.verdicts if resp else []):
+                if v.same_event and 0 <= v.pair < len(grey):
+                    target, reason = grey[v.pair][1], f"LLM same event (cos={grey[v.pair][0]:.3f})"
+                    break
     if target is None:
         return False
     for a in s.scalars(select(Article).where(Article.story_id == st.id)):
