@@ -55,6 +55,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("grant-dashboard", help="create/update the read-only dashboard DB role")
     sub.add_parser("check-privileges", help="verify anon/authenticated cannot read the schema")
     sub.add_parser("status", help="print recent runs and queue state")
+    dsp = sub.add_parser("dispatcher", help="Supabase pg_cron trigger: setup | status | fire")
+    dsp.add_argument("action", choices=["setup", "status", "fire"])
     du = sub.add_parser("due", help="exit 0 if a full cycle is due (hourly cron gate), else 1")
     du.add_argument("--min-hours", type=float, default=3.5)
     sub.add_parser("ai-check", help="live check: model, structured JSON, embeddings, dedup calibration")
@@ -173,6 +175,16 @@ def main(argv: list[str] | None = None) -> int:
             Path(args.out).parent.mkdir(parents=True, exist_ok=True)
             Path(args.out).write_text("\n".join(lines), encoding="utf-8")
             print(f"wrote {args.out}")
+        elif args.cmd == "dispatcher":
+            from . import dispatcher
+
+            if args.action == "setup":
+                print(dispatcher.setup(s, os.environ.get("DISPATCH_TOKEN", ""), os.environ.get("GITHUB_REPOSITORY", ""),
+                                       cron=os.environ.get("DISPATCH_CRON", "5 */2 * * *")))
+            elif args.action == "fire":
+                print(f"http request id {dispatcher.fire_now(s)}")
+            else:
+                print(json.dumps(dispatcher.status(s), ensure_ascii=False, indent=2, default=str))
         elif args.cmd == "due":
             from datetime import timedelta
 

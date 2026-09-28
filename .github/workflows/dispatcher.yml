@@ -1,0 +1,35 @@
+name: dispatcher
+
+# One-time setup / check of the Supabase pg_cron trigger that dispatches `news-cycle` every 2 h.
+# Needs repository secret DISPATCH_TOKEN: a fine-grained GitHub token for THIS repository only,
+# permission "Actions: Read and write". It is stored encrypted in Supabase Vault.
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "setup (create/update job), status (show recent runs), fire (dispatch once now)"
+        required: true
+        type: choice
+        options: [setup, status, fire]
+
+permissions:
+  contents: read
+
+jobs:
+  dispatcher:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+      DISPATCH_CRON: "5 */2 * * *"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: pip install -r requirements.txt && pip install --no-deps .
+      - run: python -m ainews dispatcher ${{ inputs.action }}

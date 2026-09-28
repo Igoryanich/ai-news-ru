@@ -44,6 +44,7 @@ def rerank(s: Session, settings: Settings) -> int:
             newest_published_at=st.newest_published_at,
             first_seen_at=st.first_seen_at,
             max_authority=max(src.authority for _, src in members),
+            official_source=any(src.category == "lab" and src.authority >= 0.9 for _, src in members),
             domain_count=st.domain_count,
             social_score=st.social_score,
             trend_hit=trend_hit(st.title, terms),
@@ -237,8 +238,8 @@ async def _compose(s, settings, gateway, client, st: Story) -> PostDraft:
 def _queue(s: Session, settings: Settings, st: Story, draft: PostDraft) -> None:
     members = _members(s, st)
     primary, psrc = members[0]
-    name = psrc.name if psrc.kind not in ("hn", "reddit") else primary.domain
-    others = [n for n in dict.fromkeys(src.name if src.kind not in ("hn", "reddit") else a.domain for a, src in members[1:]) if n != name]
+    name = psrc.name if psrc.kind not in ("hn", "reddit", "gnews") else primary.domain
+    others = [n for n in dict.fromkeys(src.name if src.kind not in ("hn", "reddit", "gnews") else a.domain for a, src in members[1:]) if n != name]
     # The drafting step saw the full material (and the heuristic hint) — its verdict is final,
     # so the label always matches the wording of the post.
     rumor = draft.rumor

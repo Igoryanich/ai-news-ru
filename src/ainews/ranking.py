@@ -41,6 +41,7 @@ def components(
     social_score: int,
     trend_hit: bool,
     triage: dict | None,
+    official_source: bool = False,
     at: datetime | None = None,
 ) -> dict[str, float]:
     at = at or utcnow()
@@ -49,14 +50,19 @@ def components(
     t = triage or {}
     social = min(1.0, math.log1p(max(0, social_score)) / math.log(1001))  # ~1000 points → 1.0
     velocity = min(1.0, (max(0, domain_count - 1) + social_score / 100) / span_h / 1.5)
+    mentions = min(1.0, math.log2(max(1, domain_count)) / 3)  # 8+ domains → 1.0
     if t.get("industry_impact", 0) >= 8:
         # Technical-significance floor: a major research/engineering result is not penalised
         # for arriving through channels that expose no popularity numbers (blogs, papers).
         social, velocity = max(social, 0.5), max(velocity, 0.5)
+    if official_source:
+        # First-party announcement (lab/company blog): the primary source IS the confirmation,
+        # so it is not penalised for not being reprinted by other outlets yet.
+        mentions, velocity = max(mentions, 0.5), max(velocity, 0.5)
     return {
         "freshness": 0.5 ** (age_h / 18),  # half-life 18h
         "authority": max(0.0, min(1.0, max_authority)),
-        "mentions": min(1.0, math.log2(max(1, domain_count)) / 3),  # 8+ domains → 1.0
+        "mentions": mentions,
         "social": social,
         "velocity": velocity,
         "trend": 1.0 if trend_hit else 0.0,

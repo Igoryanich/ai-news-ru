@@ -178,3 +178,31 @@ def test_backup_restore_roundtrip(settings, sessions, tmp_path):
         assert counts["stories"] == 1
         st = s.scalar(select(Story))
         assert st.title == "Бэкап" and st.published_at.tzinfo is not None
+
+
+GNEWS = """<?xml version="1.0"?><rss version="2.0"><channel><title>g</title>
+<item><title>OpenAI pauses training - WIRED</title><link>https://news.google.com/rss/articles/CBMiabc</link>
+<pubDate>Mon, 28 Sep 2026 10:00:00 GMT</pubDate><description>&lt;a&gt;OpenAI pauses training&lt;/a&gt; WIRED</description>
+<source url="https://www.wired.com">WIRED</source></item></channel></rss>"""
+
+
+@respx.mock
+def test_google_news_items_use_publisher_domain_and_clean_title():
+    respx.get("https://news.google.com/rss/search").mock(return_value=httpx.Response(200, text=GNEWS))
+    spec = SourceSpec(key="gn", name="GN", kind="gnews", url="https://news.google.com/rss/search")
+
+    async def go():
+        async with httpx.AsyncClient() as c:
+            return await COLLECTORS["gnews"].collect(c, spec, lambda u: False)
+
+    it = _run(go()).items[0]
+    assert it.title == "OpenAI pauses training" and it.extra["domain"] == "www.wired.com" and it.summary == ""
+
+
+def test_official_source_not_penalised_for_missing_reprints():
+    from ainews.ranking import components, score
+
+    now = datetime.now(UTC)
+    base = dict(newest_published_at=now, first_seen_at=now, max_authority=0.98, domain_count=1, social_score=0,
+                trend_hit=False, triage={"scale": 7, "industry_impact": 7, "practical_value": 6, "broad_interest": 7})
+    assert score(components(**base, official_source=True))[0] > score(components(**base))[0] + 6

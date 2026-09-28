@@ -99,7 +99,7 @@ def store_items(s: Session, settings: Settings, src: Source, items: list[RawItem
             Article(
                 url_hash=h,
                 url=canon,
-                domain=domain_of(canon),
+                domain=(item.extra.get("domain") or domain_of(canon)).removeprefix("www.")[:200],
                 source_id=src.id,
                 title=title or "(без заголовка)",
                 summary=summary,

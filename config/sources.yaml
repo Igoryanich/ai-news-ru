@@ -110,3 +110,28 @@ sources:
 
   # --- Signals (no stories; boosts ranking of matching stories) ---------------------------
   - {key: google-trends-us, name: Google Trends (US), kind: trends, category: signal, authority: 0, url: "https://trends.google.com/trending/rss?geo=US"}
+
+  # --- Aggregators: Google News RSS (added 2026-09-28) ------------------------------------
+  # Many outlets per event → reliable "mentions" signal. Links are news.google.com redirects
+  # (work in a browser); mentions are counted by the publisher's domain from <source url>.
+  # Low authority so that direct feeds are preferred as the post's primary source.
+  - {key: gn-openai, name: Google News · OpenAI, kind: gnews, category: media, authority: 0.6, url: "https://news.google.com/rss/search?q=OpenAI+when:1d&hl=en-US&gl=US&ceid=US:en"}
+  - {key: gn-anthropic, name: Google News · Anthropic, kind: gnews, category: media, authority: 0.6, url: "https://news.google.com/rss/search?q=Anthropic+Claude+when:1d&hl=en-US&gl=US&ceid=US:en"}
+  - {key: gn-gemini, name: Google News · Google AI, kind: gnews, category: media, authority: 0.6, url: "https://news.google.com/rss/search?q=%22Google+Gemini%22+OR+DeepMind+when:1d&hl=en-US&gl=US&ceid=US:en"}
+  - {key: gn-nvidia, name: Google News · Nvidia AI, kind: gnews, category: media, authority: 0.6, url: "https://news.google.com/rss/search?q=Nvidia+AI+when:1d&hl=en-US&gl=US&ceid=US:en"}
+  - {key: gn-meta-ms, name: Google News · Meta/Microsoft AI, kind: gnews, category: media, authority: 0.6, url: "https://news.google.com/rss/search?q=%22Meta+AI%22+OR+%22Microsoft+AI%22+OR+Copilot+when:1d&hl=en-US&gl=US&ceid=US:en"}
+  - {key: gn-open-models, name: Google News · open models, kind: gnews, category: media, authority: 0.6, url: "https://news.google.com/rss/search?q=Mistral+OR+DeepSeek+OR+Qwen+OR+Llama+model+when:1d&hl=en-US&gl=US&ceid=US:en"}
+  - {key: gn-ai, name: Google News · artificial intelligence, kind: gnews, category: media, authority: 0.55, ai_only: false, url: "https://news.google.com/rss/search?q=%22artificial+intelligence%22+when:1d&hl=en-US&gl=US&ceid=US:en"}
+  - {key: gn-ai-ru, name: Google News · ИИ (рус.), kind: gnews, category: media, authority: 0.55, url: "https://news.google.com/rss/search?q=%D0%BD%D0%B5%D0%B9%D1%80%D0%BE%D1%81%D0%B5%D1%82%D1%8C+OR+%22%D0%B8%D1%81%D0%BA%D1%83%D1%81%D1%81%D1%82%D0%B2%D0%B5%D0%BD%D0%BD%D1%8B%D0%B9+%D0%B8%D0%BD%D1%82%D0%B5%D0%BB%D0%BB%D0%B5%D0%BA%D1%82%22+when:1d&hl=ru&gl=RU&ceid=RU:ru"}
+
+  # --- More tech media (added 2026-09-28, checked live: HTTP 200) --------------------------
+  - {key: siliconangle-ai, name: SiliconANGLE, kind: rss, category: media, authority: 0.72, url: "https://siliconangle.com/category/ai/feed/"}
+  - {key: marktechpost, name: MarkTechPost, kind: rss, category: media, authority: 0.6, url: "https://www.marktechpost.com/feed/"}
+  - {key: zdnet-ai, name: ZDNET, kind: rss, category: media, authority: 0.75, ai_only: false, url: "https://www.zdnet.com/topic/artificial-intelligence/rss.xml"}
+  - {key: engadget, name: Engadget, kind: rss, category: media, authority: 0.75, ai_only: false, url: "https://www.engadget.com/rss.xml"}
+  # Russian-language outlets (general tech → AI keyword pre-filter applies)
+  - {key: vc-ru, name: vc.ru, kind: rss, category: media, authority: 0.6, ai_only: false, url: "https://vc.ru/rss/all"}
+  - {key: 3dnews, name: 3DNews, kind: rss, category: media, authority: 0.65, ai_only: false, url: "https://3dnews.ru/news/rss/"}
+  - {key: habr-news, name: Хабр (новости), kind: rss, category: media, authority: 0.6, ai_only: false, url: "https://habr.com/ru/rss/news/?fl=ru"}
+  - {key: cnews, name: CNews, kind: rss, category: media, authority: 0.6, ai_only: false, url: "https://www.cnews.ru/inc/rss/news.xml"}
+  - {key: ixbt, name: iXBT, kind: rss, category: media, authority: 0.55, ai_only: false, url: "https://www.ixbt.com/export/news.rss"}

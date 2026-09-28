@@ -6,7 +6,7 @@ import json
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime, time, timedelta
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 import feedparser
 import httpx
@@ -58,7 +58,18 @@ class FeedCollector:
             summary = html_to_text(content or entry.get("summary", ""), 6000)
             if spec.kind == "youtube":
                 summary = html_to_text(entry.get("media_description") or entry.get("summary", ""), 3000)
-            items.append(RawItem(url=link, title=title, summary=summary, published_at=when))
+            extra = {}
+            if spec.kind == "gnews":
+                # Google News: link is a news.google.com redirect (works in a browser); the real
+                # publisher is in <source url=…>. Count mentions by the publisher's domain.
+                src = entry.get("source") or {}
+                publisher = (src.get("title") or "").strip()
+                if publisher and title.endswith(" - " + publisher):
+                    title = title[: -len(publisher) - 3].rstrip()
+                if src.get("href"):
+                    extra = {"domain": urlsplit(src["href"]).hostname or "", "publisher": publisher}
+                summary = ""  # the description only repeats the title and publisher
+            items.append(RawItem(url=link, title=title, summary=summary, published_at=when, extra=extra))
         return CollectResult(items, status)
 
 
@@ -252,6 +263,7 @@ COLLECTORS = {
     "youtube": FeedCollector(),
     "github": FeedCollector(),
     "reddit": FeedCollector(),
+    "gnews": FeedCollector(),
     "arxiv": FeedCollector(),
     "hn": HackerNewsCollector(),
     "hf_papers": HFPapersCollector(),

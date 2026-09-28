@@ -54,8 +54,8 @@ class Settings(BaseSettings):
     story_window_hours: int = 60  # suppression window for updates of an already covered story
     publish_max_age_hours: int = 30  # do not publish stories whose newest article is older
     max_compose_per_cycle: int = 15
-    max_triage_per_cycle: int = 120
-    triage_batch_size: int = 20
+    max_triage_per_cycle: int = 150
+    triage_batch_size: int = 30
     fulltext_fetch: bool = True
 
     # --- Dedup ----------------------------------------------------------------

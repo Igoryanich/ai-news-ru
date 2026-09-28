@@ -1,10 +1,11 @@
 name: news-cycle
 
-# The production scheduler: a full cycle every ~4 hours (collect → dedup → rank → draft → publish).
+# The production scheduler: a full cycle every ~2 hours (collect → dedup → rank → draft → publish).
 # Runs entirely in GitHub's cloud against Supabase; no local machine involved.
-# GitHub may delay or drop scheduled runs under load (observed: a 3.5 h delay), so the workflow
-# fires HOURLY and a cheap gate runs the full cycle only when ≥ 3.5 h passed since the last
-# successful one. A dropped slot therefore costs ~1 hour, not 4. Exact timing is not guaranteed.
+# Primary trigger: Supabase pg_cron → GitHub workflow_dispatch every 2 h (see src/ainews/dispatcher.py),
+# because GitHub's own schedule dropped hourly slots for 7+ hours. The hourly `schedule` below is a
+# backup; a cheap gate runs the full cycle only when ≥ 1.75 h passed since the last successful one.
+# Exact timing is not guaranteed.
 
 on:
   schedule:
@@ -15,6 +16,10 @@ on:
         description: "Why this manual run (shown in the run list)"
         required: false
         default: "manual"
+      force:
+        description: "Run even if the last cycle was < 1.75 h ago (the pg_cron trigger sends false)"
+        required: false
+        default: "true"
 
 concurrency:
   group: news-cycle        # never two cycles at once (the DB advisory lock is the second guard)
@@ -57,7 +62,9 @@ jobs:
       - name: Is a cycle due?
         id: due
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || python -m ainews due --min-hours 3.5; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force }}" != "false" ]; then
+            echo "due=true" >> "$GITHUB_OUTPUT"
+          elif python -m ainews due --min-hours 1.75; then
             echo "due=true" >> "$GITHUB_OUTPUT"
           else
             echo "due=false" >> "$GITHUB_OUTPUT"; echo "Not due yet — skipping this hourly slot."
