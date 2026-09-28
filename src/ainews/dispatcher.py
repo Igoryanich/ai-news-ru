@@ -66,7 +66,13 @@ def status(s: Session) -> dict:
     http = s.execute(text(
         "SELECT id, status_code, created, left(coalesce(error_msg, content::text, ''), 200) "
         "FROM net._http_response ORDER BY created DESC LIMIT 5")).all()
+    tok = s.execute(text(
+        "SELECT length(decrypted_secret), left(decrypted_secret, 11) = 'github_pat_', "
+        "decrypted_secret <> btrim(decrypted_secret) FROM vault.decrypted_secrets WHERE name = :n"), {"n": SECRET}).first()
     return {
+        # Never the value itself: only whether it decrypts and looks like a fine-grained token.
+        "token": {"stored": tok is not None, "length": tok[0] if tok else None,
+                  "fine_grained_prefix": tok[1] if tok else None, "has_whitespace": tok[2] if tok else None},
         "job": {"id": job[0], "schedule": job[1], "active": job[2]} if job else None,
         "recent_runs": [{"status": r[0], "start": r[1].isoformat() if r[1] else None, "msg": r[2]} for r in runs],
         "recent_http": [{"id": h[0], "status": h[1], "at": h[2].isoformat() if h[2] else None, "body": h[3]}
