@@ -26,7 +26,7 @@ from .llm.gateway import AIGateway, AIUnavailable, InvalidOutput
 from .llm.gemini import dumps
 from .models import Article, Source, Story, utcnow
 from .prompts import DEDUP_SYSTEM
-from .textutil import clip, normalize_title, version_tokens
+from .textutil import clip, normalize_title, product_versions, version_tokens
 
 log = logging.getLogger(__name__)
 
@@ -67,6 +67,7 @@ class Decision:
 
 def decide(article: Article, candidates: list[Candidate], s: Settings) -> Decision:
     a_versions = version_tokens(article.title)
+    a_pv = product_versions(article.title)
     a_title = normalize_title(article.title)
     best: Decision = Decision("new", reason="no similar story")
     for c in candidates:
@@ -74,8 +75,12 @@ def decide(article: Article, candidates: list[Candidate], s: Settings) -> Decisi
             continue  # different releases of the same product family
         cos = cosine(article.embedding, c.story.centroid)
         ratio = max((fuzz.token_set_ratio(a_title, normalize_title(t)) for t in c.titles), default=0)
+        shared_pv = a_pv & set().union(*(product_versions(t) for t in c.titles)) if a_pv else set()
         if cos >= s.embed_merge_strong:
             d = Decision("merge", c, f"embedding cos={cos:.3f}", cos)
+        elif shared_pv and not (c.story.rumor and not article.rumor_hint):
+            # Same product + same version in both titles ("Sonnet 5.5") = same release, whatever the wording.
+            d = Decision("merge", c, f"same product+version {sorted(shared_pv)[0]} (cos={cos:.3f})", max(cos, 0.931))
         elif ratio >= s.title_merge_ratio and cos >= s.embed_merge_gray - 0.05:
             d = Decision("merge", c, f"title ratio={ratio:.0f}, cos={cos:.3f}", cos)
         elif (article.embedding is None or c.story.centroid is None) and ratio >= s.title_merge_ratio:

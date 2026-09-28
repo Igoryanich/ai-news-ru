@@ -154,3 +154,27 @@ def test_json_schema_keeps_fields_named_title():
     assert "title" not in sch["properties"]["title"]  # metadata stripped, field kept
     tri = json_schema_for(TriageResponse)
     assert tri["properties"]["items"]["items"]["properties"]["category"]["enum"]
+
+
+def test_product_versions_identify_same_release_across_wordings():
+    from ainews.textutil import product_versions
+
+    titles = [
+        "Anthropic выпустила языковую модель Sonnet 5.5",
+        "Anthropic представила Claude Sonnet 5.5: высокая производительность и доступная цена",
+        "Anthropic releases Claude Sonnet 5.5, faster and cheaper",
+        "Anthropic's new Sonnet‑5.5 model ships with watermarking",
+    ]
+    sigs = [product_versions(t) for t in titles]
+    assert all(("sonnet", "5.5") in s for s in sigs)
+    assert not (product_versions("Anthropic представила модель Claude Opus 5.5") & sigs[0])
+    assert product_versions("OpenAI ships GPT-5.1") == {("gpt", "5.1")}
+    assert not product_versions("Top 10 AI tools for 2026")
+
+
+def test_dedup_merges_same_product_version_even_with_low_cosine(settings):
+    a = _article("Anthropic представила Claude Sonnet 5.5: быстрее и дешевле", topic_vector("x1"))
+    c = _cand("Anthropic выпустила языковую модель Sonnet 5.5", topic_vector("x2"))
+    assert decide(a, [c], settings).action == "merge"
+    opus = _cand("Anthropic представила модель Claude Opus 5.5", topic_vector("x3"))
+    assert decide(a, [opus], settings).action == "new"

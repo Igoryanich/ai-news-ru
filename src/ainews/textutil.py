@@ -142,3 +142,22 @@ _AI_WORDS = re.compile(
 
 def looks_ai_related(text: str) -> bool:
     return bool(_AI_WORDS.search(text or ""))
+
+
+_PV_STOP = {"top", "part", "day", "days", "version", "update", "model", "models", "the", "and", "for", "with",
+            "over", "from", "than", "only", "under", "about", "топ", "версия", "модель", "модели", "обновление",
+            "q1", "q2", "q3", "q4", "covid", "windows", "ios", "android"}
+_PV_DOTTED = re.compile(r"([a-zа-яё][a-zа-яё]{2,})[\s-]+v?(\d+\.\d+(?:\.\d+)?)\b", re.I)
+_PV_HYPHEN = re.compile(r"\b([a-zа-яё][a-zа-яё]{1,})-(\d{1,2}(?:\.\d+)?)\b", re.I)
+
+
+def product_versions(text: str) -> set[tuple[str, str]]:
+    """Product+version signatures: "Claude Sonnet 5.5" → {("sonnet", "5.5")}, "GPT‑5.1" → {("gpt", "5.1")}.
+    Two titles sharing one describe the same release (language-independent: names stay in Latin)."""
+    text = re.sub(r"[‐-―]", "-", unicodedata.normalize("NFKC", text)).casefold()
+    out = set()
+    for rx in (_PV_DOTTED, _PV_HYPHEN):
+        for word, ver in rx.findall(text):
+            if word not in _PV_STOP:
+                out.add((word, ver))
+    return out

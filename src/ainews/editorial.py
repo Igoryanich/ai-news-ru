@@ -18,7 +18,7 @@ from .models import Article, Publication, Source, Story, utcnow
 from .prompts import COMPOSE_SYSTEM, DEDUP_SYSTEM, PROMPT_VERSION, TRIAGE_SYSTEM
 from .ranking import components, score, trend_hit
 from .render import render_post
-from .textutil import clip
+from .textutil import clip, product_versions
 
 log = logging.getLogger(__name__)
 ACTIVE = ("open", "triaged", "below_threshold", "deferred")
@@ -114,9 +114,18 @@ async def _merge_into_published(s: Session, settings: Settings, st: Story, gatew
     ).all()
     scored = sorted(((cosine(st.centroid, p.centroid), p) for p in covered), key=lambda x: -x[0])
     target, reason = None, ""
-    if scored and scored[0][0] >= settings.embed_merge_strong:
+    mine_pv = set().union(*(product_versions(a.title) for a, _ in _members(s, st))) | product_versions(st.title)
+    for p in covered:
+        # An official release after a covered rumor is news; everything else with the same
+        # product+version is an update of an already covered story.
+        if mine_pv and not (p.rumor and not st.rumor):
+            theirs = product_versions(p.title) | product_versions((p.draft or {}).get("title", ""))
+            if mine_pv & theirs:
+                target, reason = p, f"same product+version {sorted(mine_pv & theirs)[0]}"
+                break
+    if target is None and scored and scored[0][0] >= settings.embed_merge_strong:
         target, reason = scored[0][1], f"cos={scored[0][0]:.3f}"
-    else:
+    elif target is None:
         grey = [(c, p) for c, p in scored[:3] if c >= settings.embed_merge_gray]
         if grey:
             mine = [a.title for a, _ in _members(s, st)][:3]
