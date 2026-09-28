@@ -91,8 +91,15 @@ async def _cycle(settings, sessions, client, trigger, provider, publisher, sleep
     if gateway:
         with sessions() as s:
             try:
-                stats["embedded"] = await cluster.embed_pending(s, gateway)
-                stats["cluster"] = await cluster.cluster_pending(s, settings, gateway)
+                degraded = False
+                try:
+                    stats["embedded"] = await cluster.embed_pending(s, gateway)
+                except AIUnavailable as exc:
+                    # Embeddings down (e.g. 429): keep publishing — cluster by titles only this cycle.
+                    s.rollback()
+                    stats["embed_deferred"] = str(exc)
+                    degraded = True
+                stats["cluster"] = await cluster.cluster_pending(s, settings, gateway, allow_unembedded=degraded)
                 editorial.rerank(s, settings)
                 stats["triage"] = await editorial.triage(s, settings, gateway)
                 editorial.rerank(s, settings)

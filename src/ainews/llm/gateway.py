@@ -34,6 +34,10 @@ PACIFIC = ZoneInfo("America/Los_Angeles")
 QUOTA_KEY = "ai_quota_block"
 
 
+def _block_key(kind: str) -> str:
+    return QUOTA_KEY if kind == "generate" else f"{QUOTA_KEY}_{kind}"
+
+
 class AIUnavailable(Exception):
     """AI work must stop for now (quota, limit, or repeated failures). Stories are deferred."""
 
@@ -85,7 +89,19 @@ class AIGateway:
         self.provider, self.sessions, self.s = provider, sessions, settings
         self._last_call = 0.0
         self._sleep = sleep or asyncio.sleep
-        self.stopped_reason: str | None = None
+        # Stops are per kind: an embeddings outage must not stop drafting (and vice versa).
+        self._stopped: dict[str, str] = {}
+
+    @property
+    def stopped_reason(self) -> str | None:
+        return self._stopped.get("generate")
+
+    @stopped_reason.setter
+    def stopped_reason(self, value: str | None) -> None:
+        if value is None:
+            self._stopped.pop("generate", None)
+        else:
+            self._stopped["generate"] = value
 
     # ---- accounting -----------------------------------------------------------------
     def _record(self, kind: str, purpose: str, status: str, latency_ms: int, usage: Usage | None, error=None,
@@ -118,25 +134,26 @@ class AIGateway:
             ) or 0
 
     def _check_available(self, kind: str) -> None:
-        if self.stopped_reason:
-            raise AIUnavailable(self.stopped_reason)
+        if kind in self._stopped:
+            raise AIUnavailable(self._stopped[kind])
         with self.sessions() as s:
-            block = kv_get(s, QUOTA_KEY) or {}
+            block = kv_get(s, _block_key(kind)) or {}
         until = block.get("until")
         if until and datetime.fromisoformat(until) > utcnow():
-            self.stopped_reason = f"quota block until {until}: {block.get('reason', '')}"
-            raise AIUnavailable(self.stopped_reason)
+            self._stopped[kind] = f"{kind} quota block until {until}: {block.get('reason', '')}"
+            raise AIUnavailable(self._stopped[kind])
         limit = self.s.llm_daily_request_limit if kind == "generate" else self.s.llm_daily_embed_request_limit
         if self.used_today(kind) >= limit:
-            self.stopped_reason = f"daily {kind} request limit reached ({limit})"
-            raise AIUnavailable(self.stopped_reason)
+            self._stopped[kind] = f"daily {kind} request limit reached ({limit})"
+            raise AIUnavailable(self._stopped[kind])
 
-    def _block_until_reset(self, reason: str) -> None:
+    def _block_until_reset(self, kind: str, reason: str) -> None:
         until = next_pacific_midnight()
         with self.sessions() as s:
-            kv_set(s, QUOTA_KEY, {"until": until.isoformat(), "reason": reason[:300], "set_at": utcnow().isoformat()})
+            kv_set(s, _block_key(kind),
+                   {"until": until.isoformat(), "reason": reason[:300], "set_at": utcnow().isoformat()})
             s.commit()
-        self.stopped_reason = f"quota exhausted; paused until {until.isoformat()}"
+        self._stopped[kind] = f"{kind} quota exhausted; paused until {until.isoformat()}"
 
     async def _pace(self) -> None:
         wait = self.s.llm_min_interval_seconds - (time.monotonic() - self._last_call)
@@ -155,8 +172,8 @@ class AIGateway:
                 result = await fn()
             except QuotaExhausted as exc:
                 self._record(kind, purpose, exc.status, int((time.monotonic() - started) * 1000), None, exc)
-                self._block_until_reset(str(exc))
-                raise AIUnavailable(self.stopped_reason) from None
+                self._block_until_reset(kind, str(exc))
+                raise AIUnavailable(self._stopped[kind]) from None
             except ProviderError as exc:
                 self._record(kind, purpose, exc.status, int((time.monotonic() - started) * 1000), None, exc)
                 if not exc.retryable or attempt >= self.s.llm_max_retries:
@@ -164,13 +181,13 @@ class AIGateway:
                         raise ModelOverloaded(f"override model unavailable: {exc}") from None
                     if exc.retryable:
                         # Keep trying next cycle rather than burning the whole run on a flaky API.
-                        self.stopped_reason = f"provider unavailable after {attempt + 1} attempts: {exc}"
-                        raise AIUnavailable(self.stopped_reason) from None
+                        self._stopped[kind] = f"provider unavailable after {attempt + 1} attempts: {exc}"
+                        raise AIUnavailable(self._stopped[kind]) from None
                     raise
                 delay = exc.retry_after if exc.retry_after is not None else min(60.0, 5.0 * 2**attempt)
                 if delay > self.s.llm_max_retry_wait_seconds:
-                    self.stopped_reason = f"provider asked to wait {delay:.0f}s (> limit); deferring"
-                    raise AIUnavailable(self.stopped_reason) from None
+                    self._stopped[kind] = f"provider asked to wait {delay:.0f}s (> limit); deferring"
+                    raise AIUnavailable(self._stopped[kind]) from None
                 attempt += 1
                 log.info("AI %s %s retry %s in %.0fs (%s)", kind, purpose, attempt, delay, exc.status)
                 await self._sleep(delay)
@@ -231,8 +248,8 @@ class AIGateway:
 
     async def embed(self, texts: list[str], purpose: str = "embed") -> list[list[float]]:
         out: list[list[float]] = []
-        for i in range(0, len(texts), 100):
-            chunk = [t[:2000] for t in texts[i : i + 100]]
+        for i in range(0, len(texts), 50):  # smaller batches stay under per-minute token limits
+            chunk = [t[:1000] for t in texts[i : i + 50]]
 
             async def call(chunk=chunk) -> EmbedResult:
                 return await self.provider.embed(chunk, self.s.embed_dims)

@@ -135,3 +135,16 @@ def test_publish_guard_folds_grey_zone_duplicate_after_llm_check(settings, sessi
         assert asyncio.run(_merge_into_published(s, s2, same, gw)) is True
         assert same.status == "merged"
         assert asyncio.run(_merge_into_published(s, s2, other, gw)) is False  # LLM says different event
+
+
+def test_embeddings_outage_degrades_to_title_clustering_and_still_publishes(settings, engine, sessions, world):
+    from ainews.llm.base import RateLimited
+
+    class NoEmbed(FakeProvider):
+        async def embed(self, texts, dims):
+            raise RateLimited("Resource exhausted", retry_after=1)
+
+    stats = run(settings, engine, NoEmbed())
+    assert "embed_deferred" in stats and "ai_deferred" not in stats
+    with sessions() as s:
+        assert s.scalar(select(func.count()).select_from(Publication)) >= 1  # drafting still worked

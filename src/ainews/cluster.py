@@ -78,6 +78,9 @@ def decide(article: Article, candidates: list[Candidate], s: Settings) -> Decisi
             d = Decision("merge", c, f"embedding cos={cos:.3f}", cos)
         elif ratio >= s.title_merge_ratio and cos >= s.embed_merge_gray - 0.05:
             d = Decision("merge", c, f"title ratio={ratio:.0f}, cos={cos:.3f}", cos)
+        elif (article.embedding is None or c.story.centroid is None) and ratio >= s.title_merge_ratio:
+            # Degraded mode (embeddings temporarily unavailable): near-identical titles only.
+            d = Decision("merge", c, f"title ratio={ratio:.0f} (no embeddings)", cos)
         elif cos >= s.embed_merge_gray:
             d = Decision("grey", c, f"grey zone cos={cos:.3f}", cos)
         else:
@@ -150,7 +153,7 @@ async def embed_pending(s: Session, gateway: AIGateway) -> int:
     ).all()
     if not pending:
         return 0
-    texts = [f"{a.title}\n{clip(a.summary, 600)}" for a in pending]
+    texts = [f"{a.title}\n{clip(a.summary, 300)}" for a in pending]
     vectors = await gateway.embed(texts)
     for a, v in zip(pending, vectors, strict=True):
         a.embedding = v
@@ -158,12 +161,14 @@ async def embed_pending(s: Session, gateway: AIGateway) -> int:
     return len(pending)
 
 
-async def cluster_pending(s: Session, settings: Settings, gateway: AIGateway | None) -> dict:
+async def cluster_pending(
+    s: Session, settings: Settings, gateway: AIGateway | None, *, allow_unembedded: bool = False
+) -> dict:
     stats = {"merged": 0, "new_stories": 0, "grey_checked": 0, "grey_merged": 0}
     _AUTH_CACHE.clear()
     articles = s.scalars(
         select(Article)
-        .where(Article.status == "pending", Article.embedding.is_not(None))
+        .where(Article.status == "pending", *(() if allow_unembedded else (Article.embedding.is_not(None),)))
         .order_by(Article.published_at)
     ).all()
     candidates = load_candidates(s, settings)
