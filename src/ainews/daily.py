@@ -17,7 +17,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .config import Settings
-from .llm.gateway import AIGateway, AIUnavailable, InvalidOutput
+from .llm import drafting_model
+from .llm.gateway import AIGateway, AIUnavailable, InvalidOutput, ModelOverloaded
 from .llm.gemini import dumps
 from .models import Publication, Story, utcnow
 from .render import SAFE_LIMIT, visible_len
@@ -137,7 +138,12 @@ async def run_daily(s: Session, settings: Settings, gateway: AIGateway | None, a
         payload = [{"id": i["id"], "title": i["title"], "summary": i["summary"], "importance": i["importance"]}
                    for i in items]
         try:
-            r = await gateway.generate("daily", DAILY_SYSTEM, dumps({"items": payload}), DailySummary, temperature=0.2)
+            try:
+                r = await gateway.generate("daily", DAILY_SYSTEM, dumps({"items": payload}), DailySummary,
+                                           temperature=0.2, model=drafting_model(settings))
+            except ModelOverloaded:  # paid budget reached / drafting model busy → free chain
+                r = await gateway.generate("daily", DAILY_SYSTEM, dumps({"items": payload}), DailySummary,
+                                           temperature=0.2)
             if has_cyrillic(r.summary_ru):
                 summary = r.summary_ru.strip()
             keep = set(r.keep_ids)

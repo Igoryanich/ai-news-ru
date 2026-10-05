@@ -12,6 +12,7 @@ from .collectors import fetch_article_text
 from .config import Settings
 from .db import kv_get
 from .editorial_schemas import DedupResponse, PostDraft, TriageResponse
+from .llm import drafting_model
 from .llm.gateway import AIGateway, AIUnavailable, InvalidOutput, ModelOverloaded
 from .llm.gemini import dumps
 from .models import Article, Publication, Source, Story, utcnow
@@ -233,7 +234,7 @@ async def _compose(s, settings, gateway, client, st: Story) -> PostDraft:
         "other_outlets_count": max(0, st.domain_count - 1),
         "materials": docs,
     }
-    model = settings.gemini_compose_model or None
+    model = drafting_model(settings)  # paid key (capped in EUR/day) when configured
     try:
         draft = await gateway.generate("compose", COMPOSE_SYSTEM, dumps(task), PostDraft, temperature=0.4, model=model)
     except ModelOverloaded:

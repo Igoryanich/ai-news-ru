@@ -246,3 +246,36 @@ def test_overloaded_model_is_skipped_for_rest_of_run(settings, sessions):
     gen(gw)
     gen(gw)
     assert primary.calls == 1 and backup.calls == 2  # second request went straight to the working model
+
+
+def test_paid_model_is_capped_by_daily_eur_budget_then_falls_back(settings, sessions):
+    from ainews.llm.gateway import ModelOverloaded
+    from ainews.llm.openai_compat import RouterProvider
+
+    paid = Scripted([OK, OK, OK])
+    s2 = settings.model_copy(update={"paid_daily_budget_eur": 0.05, "llm_max_input_chars": 3000,
+                                     "llm_max_output_tokens": 1000, "gemini_paid_api_key": "k"})
+    gw = AIGateway(RouterProvider(Scripted([OK]), {"paid": paid}), sessions, s2, sleep=no_sleep)
+    asyncio.run(gw.generate("compose", "s", "{}", DedupResponse, model="paid:gemini-3.8-flash"))
+    with sessions() as s:  # pretend today's paid usage is already close to the cap
+        s.add(LLMCall(quota_day=__import__("ainews.llm.gateway", fromlist=["quota_day"]).quota_day(),
+                      provider="gemini", model="paid:gemini-3.8-flash", kind="generate", purpose="compose",
+                      status="ok", prompt_tokens=20_000, output_tokens=8_000, thoughts_tokens=2_000))
+        s.commit()
+    assert gw.paid_spend_today() > 0.04
+    with pytest.raises(ModelOverloaded, match="paid daily budget"):
+        asyncio.run(gw.generate("compose", "s", "{}", DedupResponse, model="paid:gemini-3.8-flash"))
+    assert paid.calls == 1  # the capped call never reached the paid API
+
+
+def test_error_rows_record_the_model_that_failed(settings, sessions):
+    from ainews.llm.openai_compat import RouterProvider
+
+    gw = AIGateway(RouterProvider(Scripted([]), {"groq": Scripted([Transient("503")] * 4)}), sessions,
+                   settings.model_copy(update={"llm_max_retries": 0}), sleep=no_sleep)
+    from ainews.llm.gateway import ModelOverloaded
+
+    with pytest.raises(ModelOverloaded):
+        asyncio.run(gw.generate("compose", "s", "{}", DedupResponse, model="groq:x"))
+    with sessions() as s:
+        assert s.scalar(select(LLMCall.model).where(LLMCall.status == "transient")) == "groq:x"

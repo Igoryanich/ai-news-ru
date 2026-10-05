@@ -37,6 +37,14 @@ class Settings(BaseSettings):
     # (skipped when GROQ_API_KEY is not set). Never a paid model.
     gemini_fallback_model: str = "gemini-3.1-flash-lite,gemini-3.7-flash,groq:openai/gpt-oss-120b"
     groq_api_key: str = ""
+    # Paid Gemini key (a SEPARATE Google Cloud project with billing) used ONLY for drafting posts and
+    # digests with GEMINI_COMPOSE_MODEL. Hard daily cap in code: once today's estimated spend would
+    # exceed PAID_DAILY_BUDGET_EUR, drafting falls back to the free models. Prices are list prices
+    # per 1M tokens (thinking tokens are billed as output); USD is counted 1:1 as EUR (conservative).
+    gemini_paid_api_key: str = ""
+    paid_daily_budget_eur: float = 0.24
+    paid_price_in_per_m: float = 0.75
+    paid_price_out_per_m: float = 3.75
     groq_reasoning_effort: str = "low"
     gemini_compose_model: str = ""  # optional stronger model for post drafting; empty = gemini_model
     gemini_thinking_level: str = ""  # empty = model default; e.g. "minimal" / "low"

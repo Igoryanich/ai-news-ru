@@ -169,7 +169,25 @@ class AIGateway:
         self._last_call = time.monotonic()
 
     # ---- core call loop ---------------------------------------------------------------
-    async def _call(self, kind: str, purpose: str, fn, override: bool = False):
+    def paid_spend_today(self) -> float:
+        """Estimated spend (EUR, list prices) of today's calls through the paid key."""
+        with self.sessions() as s:
+            tin, tout, tthink = s.execute(
+                select(func.coalesce(func.sum(LLMCall.prompt_tokens), 0), func.coalesce(func.sum(LLMCall.output_tokens), 0),
+                       func.coalesce(func.sum(LLMCall.thoughts_tokens), 0))
+                .where(LLMCall.quota_day == quota_day(), LLMCall.model.like("paid:%"))
+            ).one()
+        return (tin * self.s.paid_price_in_per_m + (tout + tthink) * self.s.paid_price_out_per_m) / 1_000_000
+
+    def _check_paid_budget(self) -> None:
+        # Worst case for the next call: full input cap + full output cap (incl. thinking).
+        worst = ((self.s.llm_max_input_chars / 3) * self.s.paid_price_in_per_m
+                 + self.s.llm_max_output_tokens * 2 * self.s.paid_price_out_per_m) / 1_000_000
+        spent = self.paid_spend_today()
+        if spent + worst > self.s.paid_daily_budget_eur:
+            raise ModelOverloaded(f"paid daily budget reached (≈€{spent:.3f} of €{self.s.paid_daily_budget_eur})")
+
+    async def _call(self, kind: str, purpose: str, fn, override: bool = False, model: str | None = None):
         attempt = 0
         while True:
             self._check_available(kind)
@@ -178,14 +196,16 @@ class AIGateway:
             try:
                 result = await fn()
             except QuotaExhausted as exc:
-                self._record(kind, purpose, exc.status, int((time.monotonic() - started) * 1000), None, exc)
+                self._record(kind, purpose, exc.status, int((time.monotonic() - started) * 1000), None, exc,
+                             model=model)
                 if override:
                     # Daily quota is per model: move on to the next model instead of stopping all AI.
                     raise ModelOverloaded(f"model quota exhausted: {exc}") from None
                 self._block_until_reset(kind, str(exc))
                 raise AIUnavailable(self._stopped[kind]) from None
             except ProviderError as exc:
-                self._record(kind, purpose, exc.status, int((time.monotonic() - started) * 1000), None, exc)
+                self._record(kind, purpose, exc.status, int((time.monotonic() - started) * 1000), None, exc,
+                             model=model)
                 if not exc.retryable or attempt >= self.s.llm_max_retries:
                     if exc.retryable and override:
                         raise ModelOverloaded(f"override model unavailable: {exc}") from None
@@ -263,7 +283,10 @@ class AIGateway:
                     **({"model": model} if model else {}),
                 )
 
-            result, latency = await self._call("generate", purpose, call, override=bool(model) or overload_ok)
+            if model and model.startswith("paid:"):
+                self._check_paid_budget()
+            result, latency = await self._call("generate", purpose, call, override=bool(model) or overload_ok,
+                                               model=model)
             try:
                 parsed = schema_model.model_validate(json.loads(result.text))
             except (ValueError, ValidationError) as exc:
