@@ -85,6 +85,8 @@ async def telegram_check(settings: Settings) -> dict:
                                json={"chat_id": settings.telegram_chat_id, "user_id": bot["id"]})).json()
         m = member.get("result", {})
         can_post = m.get("status") == "creator" or bool(m.get("can_post_messages"))
+        # Pinning in a channel requires the "edit messages" admin right.
+        can_pin = m.get("status") == "creator" or bool(m.get("can_edit_messages"))
         return {
             "ok": can_post,
             "bot": bot.get("username"),
@@ -94,6 +96,7 @@ async def telegram_check(settings: Settings) -> dict:
             "chat_id": chat["result"].get("id"),
             "bot_status": m.get("status"),
             "can_post_messages": can_post,
+            "can_pin_daily_digest": can_pin,
         }
 
 

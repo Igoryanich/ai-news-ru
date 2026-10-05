@@ -46,6 +46,16 @@ class TelegramPublisher:
             raise Rejected(f"{code}: {desc}", fatal_for_target=True)
         raise Rejected(f"{code}: {desc}")
 
+    async def pin(self, message_id: int) -> bool:
+        """Pin silently: the post itself already notified subscribers."""
+        data = await self._call("pinChatMessage", {"chat_id": self.chat_id, "message_id": message_id,
+                                                    "disable_notification": True})
+        return bool(data.get("ok"))
+
+    async def unpin(self, message_id: int) -> bool:
+        data = await self._call("unpinChatMessage", {"chat_id": self.chat_id, "message_id": message_id})
+        return bool(data.get("ok"))
+
     async def subscribers(self) -> int | None:
         data = await self._call("getChatMemberCount", {"chat_id": self.chat_id})
         return data.get("result") if data.get("ok") else None

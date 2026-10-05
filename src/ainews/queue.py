@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from .config import Settings
-from .db import kv_set
+from .db import kv_get, kv_set
 from .models import Publication, Story, utcnow
 from .publishers import Ambiguous, NotSent, Publisher, Rejected, RetryLater
 
@@ -41,15 +41,17 @@ async def drain(
     with sessions() as s:
         stats["recovered_uncertain"] = recover_interrupted(s, target)
         now = utcnow()
-        ids = [
-            p.id
+        order = {"story": 0, "daily": 1, "weekly": 2}  # stories first, then the digests
+        pending = [
+            p
             for p in s.scalars(
                 select(Publication)
                 .where(Publication.target == target, Publication.status == "pending")
-                .order_by(Publication.kind.desc(), Publication.id)  # stories first, weekly after
+                .order_by(Publication.id)
             )
             if p.next_attempt_at is None or p.next_attempt_at <= now
         ]
+        ids = [p.id for p in sorted(pending, key=lambda p: (order.get(p.kind, 9), p.id))]
     first = True
     for pid in ids:
         if not first:
@@ -119,7 +121,42 @@ async def drain(
         if stop:
             log.warning("queue %s halted this cycle: %s", target, outcome)
             break
+    stats["pinned"] = await sync_pinned_daily(sessions, publisher)
     return stats
+
+
+async def sync_pinned_daily(sessions: sessionmaker[Session], publisher: Publisher) -> str:
+    """Keep exactly one daily digest pinned: the latest sent one. Pin silently, then unpin the
+    previous. Runs on every drain, so a failed pin heals itself next cycle. Never fails delivery."""
+    if not hasattr(publisher, "pin"):
+        return "unsupported"
+    target, key = publisher.target, f"pinned_daily:{publisher.target}"
+    with sessions() as s:
+        latest = s.scalar(
+            select(Publication.message_id)
+            .where(Publication.target == target, Publication.kind == "daily", Publication.status == "sent",
+                   Publication.message_id.is_not(None))
+            .order_by(Publication.sent_at.desc(), Publication.id.desc())
+            .limit(1)
+        )
+        current = (kv_get(s, key) or {}).get("message_id")
+    if latest is None or latest == current:
+        return "ok"
+    try:
+        if not await publisher.pin(latest):
+            return "pin_failed"
+    except Exception as exc:  # pin rights missing, network — retried next cycle
+        log.warning("daily digest pin failed: %s", type(exc).__name__)
+        return "pin_failed"
+    if current:
+        try:
+            await publisher.unpin(current)
+        except Exception as exc:
+            log.warning("previous digest unpin failed: %s", type(exc).__name__)
+    with sessions() as s:
+        kv_set(s, key, {"message_id": latest, "at": utcnow().isoformat()})
+        s.commit()
+    return "pinned"
 
 
 def resolve(s: Session, pub_id: int, action: str, message_id: int | None = None) -> Publication:

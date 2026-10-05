@@ -78,6 +78,11 @@ class Settings(BaseSettings):
     weekly_min_importance: int = 50
     weekly_size: int = 5
 
+    # --- Daily digest (pinned) --------------------------------------------------
+    daily_digest_enabled: bool = True
+    daily_digest_hour: int = Field(21, ge=0, le=23)  # local hour (WEEKLY_TIMEZONE) after which it is built
+    daily_max_items: int = 10
+
     # --- Housekeeping ---------------------------------------------------------
     sources_file: str = "config/sources.yaml"
     retention_days: int = 30

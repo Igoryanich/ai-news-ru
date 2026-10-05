@@ -8,7 +8,7 @@ from datetime import timedelta
 import httpx
 from sqlalchemy import select, update
 
-from . import cluster, editorial, housekeeping, ingest, weekly
+from . import cluster, daily, editorial, housekeeping, ingest, weekly
 from .config import Settings
 from .db import LockBusy, kv_get, kv_set, make_engine, pipeline_lock, session_factory
 from .llm import AIGateway, AIUnavailable, build_provider
@@ -124,6 +124,13 @@ async def _cycle(settings, sessions, client, trigger, provider, publisher, sleep
             stats["weekly"] = weekly.run_weekly(s, settings)
     except Exception as exc:
         fail("weekly", exc)
+
+    # Daily digest (pinned after sending; the AI summary is optional)
+    try:
+        with sessions() as s:
+            stats["daily"] = await daily.run_daily(s, settings, gateway)
+    except Exception as exc:
+        fail("daily", exc)
 
     # 6. Publish
     if settings.dry_run:
