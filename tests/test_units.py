@@ -141,6 +141,7 @@ def test_gemini_error_classification():
     e = classify_error(429, per_min)
     assert isinstance(e, RateLimited) and e.retry_after == 17
     assert isinstance(classify_error(503, None), Transient)
+    assert isinstance(classify_error(402, {"error": {"message": "prepayment credits are depleted"}}), QuotaExhausted)
     assert isinstance(classify_error(400, {"error": {"message": "bad"}}), Permanent)
 
 

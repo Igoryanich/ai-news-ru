@@ -29,6 +29,9 @@ def classify_error(status: int, body: dict | None) -> Exception:
     err = (body or {}).get("error", {}) if isinstance(body, dict) else {}
     message = str(err.get("message", ""))[:300] or f"HTTP {status}"
     details = err.get("details", []) or []
+    if status == 402:
+        # Prepay balance depleted (or billing not yet synced): this key/model is out for now.
+        return QuotaExhausted(f"payment required (prepay credits): {message}")
     if status == 429:
         quota_ids = [
             v.get("quotaId", "") for d in details for v in d.get("violations", []) if isinstance(v, dict)
