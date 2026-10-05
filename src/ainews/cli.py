@@ -55,6 +55,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("grant-dashboard", help="create/update the read-only dashboard DB role")
     sub.add_parser("check-privileges", help="verify anon/authenticated cannot read the schema")
     sub.add_parser("status", help="print recent runs and queue state")
+    sub.add_parser("usage", help="AI requests and tokens per day/model (last 10 days)")
     dsp = sub.add_parser("dispatcher", help="Supabase pg_cron trigger: setup | status | fire")
     dsp.add_argument("action", choices=["setup", "status", "fire"])
     du = sub.add_parser("due", help="exit 0 if a full cycle is due (hourly cron gate), else 1")
@@ -202,6 +203,20 @@ def main(argv: list[str] | None = None) -> int:
                 due = True  # AI stage was deferred by a transient outage: catch up after ~1 hour
             print(f"last successful cycle: {last.isoformat() if last else 'never'}; due: {due}")
             return 0 if due else 1
+        elif args.cmd == "usage":
+            from sqlalchemy import func, select
+
+            from .models import LLMCall
+
+            q = (select(LLMCall.quota_day, LLMCall.model, LLMCall.purpose, LLMCall.status, func.count(),
+                        func.coalesce(func.sum(LLMCall.prompt_tokens), 0), func.coalesce(func.sum(LLMCall.output_tokens), 0),
+                        func.coalesce(func.sum(LLMCall.thoughts_tokens), 0))
+                 .group_by(LLMCall.quota_day, LLMCall.model, LLMCall.purpose, LLMCall.status)
+                 .order_by(LLMCall.quota_day.desc()))
+            print("day | model | purpose | status | calls | in | out | thoughts")
+            for row in s.execute(q).all():
+                if row[0] >= "2026-09-25":
+                    print(" | ".join(str(x) for x in row))
         elif args.cmd == "status":
             from sqlalchemy import func, select
 

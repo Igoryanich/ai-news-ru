@@ -10,7 +10,7 @@ on:
         description: "What to check"
         required: true
         type: choice
-        options: [telegram-check, ai-check, backup-llm-check, sources-check, show-posts, stories-report]
+        options: [telegram-check, ai-check, backup-llm-check, sources-check, show-posts, stories-report, usage]
 
 permissions:
   contents: read
