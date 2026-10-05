@@ -49,6 +49,7 @@ jobs:
       LLM_DAILY_REQUEST_LIMIT: ${{ vars.LLM_DAILY_REQUEST_LIMIT || '150' }}
       PUBLISH_THRESHOLD: ${{ vars.PUBLISH_THRESHOLD || '55' }}
       MAIN_THRESHOLD: ${{ vars.MAIN_THRESHOLD || '80' }}
+      DAILY_DIGEST_HOUR: ${{ vars.DAILY_DIGEST_HOUR || '21' }}
       HTTP_USER_AGENT: "AINewsRuBot/0.1 (RSS reader; +https://github.com/${{ github.repository }})"
       PYTHONUNBUFFERED: "1"
     steps:
